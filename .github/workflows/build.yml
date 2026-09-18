@@ -47,6 +47,15 @@ jobs:
       - name: Install Qt
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: python -m aqt install-qt ${{ matrix.host }} desktop 6.8.3 ${{ matrix.arch }} --outputdir "${{ runner.temp }}/Qt" --archives qtbase qtsvg
+      - name: Cache CAD kernel
+        uses: actions/cache@v4
+        id: occt-cache
+        with:
+          path: .tools/occt
+          key: occt-7.9.3-minimal-shared-${{ matrix.os }}-v1
+      - name: Build CAD kernel
+        if: steps.occt-cache.outputs.cache-hit != 'true'
+        run: python scripts/bootstrap-occt.py --jobs 3
       - name: Configure
         run: cmake --preset release -DCMAKE_PREFIX_PATH="${{ runner.temp }}/Qt/6.8.3/${{ matrix.qt_subdir }}"
       - name: Build
@@ -54,7 +63,9 @@ jobs:
       - name: Add Qt runtime to Windows PATH
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '"${{ runner.temp }}/Qt/6.8.3/${{ matrix.qt_subdir }}/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
+        run: |
+          "${{ runner.temp }}/Qt/6.8.3/${{ matrix.qt_subdir }}/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "${{ github.workspace }}/.tools/occt/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test
         run: ctest --preset release
       - name: Install NSIS
@@ -71,7 +82,10 @@ jobs:
           path: |
             build/release/Testing/Temporary/LastTest.log
             build/release/core-results.txt
+            build/release/cad-results.txt
+            build/release/document-results.txt
             build/release/ui-smoke.png
+            build/release/ui-smoke-error.txt
       - uses: actions/upload-artifact@v4
         with:
           name: MVCAD-${{ matrix.package }}
@@ -96,5 +110,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '%s\n' 'Native Qt development preview toward v1.0. Supports centerline CSV import, branch diameter editing, sweep display previews, part saving and undo/redo. CAD solids, joined junctions, constrained sketches and STEP export are not yet implemented. Packages are unsigned. See the repository roadmap.' > notes.md
+          printf '%s\n' 'Native Qt development preview toward v1.0. Supports reference-plane sketches, exact solid extrusion/cuts, point import and centerline creation, branch diameter editing, part saving and undo/redo. See the repository README for supported junction geometry and limitations. General constrained sketches and STEP export remain under development. Packages are unsigned.' > notes.md
           gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --title "MVCAD $GITHUB_REF_NAME — development preview" --notes-file notes.md --prerelease

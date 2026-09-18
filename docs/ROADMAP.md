@@ -1,6 +1,6 @@
 # v1.0 release gates
 
-Version 0.1.0 is a development milestone. Do not tag v1.0 until the requirements below are implemented and validated.
+Version 0.2.0 is a development milestone. Do not tag v1.0 until the requirements below are implemented and validated.
 
 ## Foundation
 
@@ -12,7 +12,7 @@ Version 0.1.0 is a development milestone. Do not tag v1.0 until the requirements
 ## CAD geometry and interchange
 
 - Evaluate Open CASCADE using real input curves plus synthetic Y/T junctions, mergers, loops, acute angles, short branches, unequal diameters and closely spaced junctions.
-- Choose kernel only after stable solid/surface modeling and STEP tests demonstrate suitability; keep source points, graph topology and part state separate from kernel objects.
+- OCCT 7.9.3 now supplies the initial exact extrusion, sweep and junction implementation. Validate its suitability for the full solid/surface and STEP requirements; keep document state separate from kernel objects.
 - Constant-diameter branch solids with arc-length setbacks and free-end preservation.
 - Provisional blends for partially assigned junctions, rebuilt as a single valid joined region when all incident diameters are assigned. A set of intersecting tubes is not an acceptable substitute.
 - Editable round/fillet transitions, invalid-radius handling and last-valid-model preservation.
@@ -40,7 +40,7 @@ Version 0.1.0 is a development milestone. Do not tag v1.0 until the requirements
 
 ## Current geometry limitation
 
-The display preview uses centripetal Catmull-Rom interpolation, approximate arc-length trimming and transported circular rings. It does not establish surface continuity, watertight B-rep validity or branch/junction collision validity. Software-rendered triangles can have depth-order artifacts at intersections. No junction is marked built merely because its diameters have been entered.
+The viewport now tessellates Open CASCADE solids. Branches use interpolated B-splines and arc-length setbacks; junctions use variable-radius lofts and Boolean unions, with optional intersection-edge fillets. B-rep validity and connected-solid checks gate successful junctions. These checks do not prove global clearance, curvature continuity, physiological suitability or downstream meshing quality. Short setbacks and difficult angles can fail and are labeled explicitly. Software rendering can have depth-order artifacts and fine tessellation remains slow. General edge fillets and STEP round trips are still unimplemented.
 
 ## Display contract
 

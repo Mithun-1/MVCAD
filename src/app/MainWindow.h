@@ -1,5 +1,5 @@
 #pragma once
-#include "core/Network.h"
+#include "core/Document.h"
 #include <QMainWindow>
 #include <QJsonObject>
 class Viewport;
@@ -22,7 +22,11 @@ public:
 protected:
     void closeEvent(QCloseEvent*) override;
 private:
-    mvcad::Network network_;
+    mvcad::Document document_;
+    double precision_=1e-3;
+    int selectedPlane_=0,selectedSketch_=-1,selectedFeature_=-1;
+    bool sketchMode_=false;
+    std::vector<int> selectedPoints_;
     QString path_;
     Viewport* viewport_{};
     QTreeWidget* tree_{};
@@ -47,6 +51,15 @@ private:
     bool mayDiscard();
     void newPart();
     void commit(const mvcad::Network& next,const QString& text);
-    void restore(const mvcad::Network& n);
+    void commit(const mvcad::Document& next,const QString& text);
+    void restore(const mvcad::Document& n);
+    void handleTreeSelection();
+    void newSketch();void editSketch();void exitSketch();
+    void drawSketch(mvcad::ProfileType type);
+    void acceptSketch(const mvcad::Sketch& sketch);
+    void dimensionSketch();void extrude(bool cut,int edit=-1);
+    void editFeature();void deleteLastFeature();
+    void settings();void curveThroughPoints();void roundJunctions();
+    void selectPlane(int index);void selectPoint(int index,bool toggle);
     void updateTitle();
 };

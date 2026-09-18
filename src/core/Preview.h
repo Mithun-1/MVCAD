@@ -9,5 +9,5 @@ struct Preview {
 };
 std::vector<Vec3> interpolateCurve(const std::vector<Vec3>& points,int steps=12);
 std::vector<Vec3> trimByArcLength(const std::vector<Vec3>& points,double start,double end);
-Preview makePreview(const Network& n);
+Preview makePreview(const Network& n,double precision=1e-3);
 }

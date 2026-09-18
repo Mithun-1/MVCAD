@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QFileInfo>
+#include <QFile>
 #include <QFontDatabase>
 #include <QTimer>
 
@@ -25,7 +26,8 @@ int main(int argc,char** argv) {
     MainWindow window;window.show();
     if(!cli.positionalArguments().isEmpty())window.openPath(cli.positionalArguments().first());
     if(cli.isSet("smoke-test"))QTimer::singleShot(100,&window,[&]{
-        if(!window.smokeCheck()){app.exit(2);return;}
+        try{if(!window.smokeCheck()){app.exit(2);return;}}
+        catch(const std::exception& e){QFile report(QFileInfo(cli.value("screenshot")).absolutePath()+"/ui-smoke-error.txt");if(report.open(QIODevice::WriteOnly))report.write(e.what());app.exit(4);return;}
         QTimer::singleShot(200,&window,[&]{
             bool ok=true;if(cli.isSet("screenshot"))ok=window.grab().save(cli.value("screenshot"));app.exit(ok?0:3);
         });

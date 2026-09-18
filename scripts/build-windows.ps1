@@ -21,6 +21,8 @@ $mvcadPythonTools=Join-Path $mvcadRoot '.tools\python\Scripts'
 $mvcadQt=Join-Path $mvcadRoot '.tools\Qt\6.8.3\msvc2022_64'
 if(Test-Path -LiteralPath $mvcadPythonTools){$env:PATH="$mvcadPythonTools;$env:PATH"}
 if(Test-Path -LiteralPath $mvcadQt){$env:CMAKE_PREFIX_PATH=$mvcadQt;$env:PATH="$mvcadQt\bin;$env:PATH"}
+$mvcadOcct=Join-Path $mvcadRoot '.tools\occt\bin'
+if(Test-Path -LiteralPath $mvcadOcct){$env:PATH="$mvcadOcct;$env:PATH"}
 cmake --preset $Preset
 if($LASTEXITCODE -ne 0){throw 'CMake configure failed.'}
 cmake --build --preset $Preset --parallel

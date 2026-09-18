@@ -1,0 +1,18 @@
+{
+  "format": "MVCAD-Part", "schemaVersion": 2, "dimensionless": true,
+  "network": {
+    "format": "MVCAD-Part", "schemaVersion": 1, "dimensionless": true,
+    "connectionTolerance": 0.000001,
+    "curves": [
+      {"id": "mother", "points": [[0,0,0],[10,0,0]]},
+      {"id": "daughter1", "points": [[0,0,0],[-5,8,0]]},
+      {"id": "daughter2", "points": [[0,0,0],[-5,-8,0]]}
+    ],
+    "branches": [
+      {"id": "B001", "diameter": 4, "startSetback": 0.3, "endSetback": 0.3},
+      {"id": "B002", "diameter": 3, "startSetback": 0.3, "endSetback": 0.3},
+      {"id": "B003", "diameter": 2, "startSetback": 0.3, "endSetback": 0.3}
+    ]
+  },
+  "importedPoints": [], "junctionRadius": 0.1, "sketches": [], "features": []
+}

@@ -68,9 +68,9 @@ std::vector<Vec3> trimByArcLength(const std::vector<Vec3>& p,double start,double
     for(size_t i=1;i+1<p.size();++i) if(lengths[i]>a&&lengths[i]<b) out.push_back(p[i]);
     out.push_back(at(b));return out;
 }
-Preview makePreview(const Network& n) {
+Preview makePreview(const Network& n,double precision) {
+    if(!std::isfinite(precision)||precision<1e-4||precision>1) fail("Display precision must be between 1e-4 and 1.");
     Preview mesh;
-    constexpr int sides=16;
     for(int index=0;index<static_cast<int>(n.branches.size());++index) {
         const auto& b=n.branches[index];
         if(b.start<0||b.end<0||b.start>=static_cast<int>(n.nodes.size())||b.end>=static_cast<int>(n.nodes.size()))
@@ -80,8 +80,12 @@ Preview makePreview(const Network& n) {
         const int steps=std::max(1,std::min(12,512/static_cast<int>(b.points.size())));
         auto full=interpolateCurve(b.points,steps);mesh.centerlines.push_back(full);
         if(b.diameter<=0) continue;
+        const double halfAngle=std::acos(std::clamp(1-precision/(b.diameter/2),-1.0,1.0));
+        if(!(halfAngle>0)||std::numbers::pi/halfAngle>4096)fail("Diameter is too large for this display precision. Increase tolerance or reduce diameter.");
+        const int sides=std::max(16,static_cast<int>(std::ceil(std::numbers::pi/halfAngle)));
         auto p=trimByArcLength(full,n.nodes[b.start].degree>2?b.startSetback:0,n.nodes[b.end].degree>2?b.endSetback:0);
-        std::vector<std::array<Vec3,sides>> rings;
+        if(mesh.triangles.size()+p.size()*sides*2>2000000)fail("Preview exceeds two million triangles. Increase display tolerance or reduce input size.");
+        std::vector<std::vector<Vec3>> rings;
         Vec3 normal;
         for(size_t i=0;i<p.size();++i) {
             const Vec3 tangent=(p[std::min(i+1,p.size()-1)]-p[i?i-1:0]).normalized();
@@ -92,7 +96,7 @@ Preview makePreview(const Network& n) {
                 normal=normal.normalized();
             }
             const auto binormal=tangent.cross(normal).normalized();
-            std::array<Vec3,sides> ring;
+            std::vector<Vec3> ring(sides);
             for(int s=0;s<sides;++s) {
                 const double angle=2*std::numbers::pi*s/sides;
                 ring[s]=p[i]+(normal*std::cos(angle)+binormal*std::sin(angle))*(b.diameter/2);

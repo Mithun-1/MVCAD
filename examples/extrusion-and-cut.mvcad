@@ -1,0 +1,19 @@
+{
+  "format": "MVCAD-Part",
+  "schemaVersion": 2,
+  "dimensionless": true,
+  "network": {
+    "format": "MVCAD-Part", "schemaVersion": 1, "dimensionless": true,
+    "connectionTolerance": 0.000001, "curves": [], "branches": []
+  },
+  "importedPoints": [],
+  "junctionRadius": 0,
+  "sketches": [
+    {"id": "Sketch1", "plane": 0, "offset": 0, "profile": 1, "radius": 0, "points": [[-10,-10],[10,10]]},
+    {"id": "Sketch2", "plane": 0, "offset": 0, "profile": 0, "radius": 3, "points": [[0,0]]}
+  ],
+  "features": [
+    {"id": "Boss-Extrude1", "sketch": 0, "operation": 0, "extent": 0, "depth": 10, "reversed": false},
+    {"id": "Cut-Extrude2", "sketch": 1, "operation": 1, "extent": 1, "depth": 10, "reversed": false}
+  ]
+}
