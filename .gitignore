@@ -1,0 +1,17 @@
+.tools/
+build*/
+out/
+dist/
+_CPack_Packages/
+*.user
+*.autosave
+*.log
+*.7z
+*.exe
+*.dmg
+*.zip
+.DS_Store
+.vscode/
+# User-supplied research images stay local; generated design targets are versioned.
+design/references/
+design/drafts/

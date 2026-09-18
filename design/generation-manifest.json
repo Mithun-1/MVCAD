@@ -1,0 +1,79 @@
+{
+  "tool": "built-in image_gen.imagegen",
+  "preferred": "mvcad-features-v2.png",
+  "requested_size": [
+    1440,
+    1024
+  ],
+  "actual_preferred_size": [
+    1487,
+    1058
+  ],
+  "generations": [
+    {
+      "output": "drafts/crimson-initial.png",
+      "prompt": "prompts/crimson-workbench.txt",
+      "references": [
+        "references/mmc2-frame-2s.png",
+        "references/mmc4-frame-2s.png"
+      ]
+    },
+    {
+      "output": "drafts/crimson-corrected.png",
+      "prompt": "prompts/crimson-workbench-refinement.txt",
+      "references": [
+        "drafts/crimson-initial.png"
+      ]
+    },
+    {
+      "output": "drafts/precision-initial.png",
+      "prompt": "prompts/precision-studio.txt",
+      "references": [
+        "references/mmc2-frame-2s.png",
+        "references/mmc4-frame-2s.png"
+      ]
+    },
+    {
+      "output": "concepts/crimson-workbench.png",
+      "prompt": "prompts/crimson-workbench-clean.txt",
+      "references": [
+        "drafts/crimson-corrected.png"
+      ]
+    },
+    {
+      "output": "concepts/precision-studio.png",
+      "prompt": "prompts/precision-studio-clean.txt",
+      "references": [
+        "drafts/precision-initial.png"
+      ]
+    },
+    {
+      "output": "mvcad-white-rounding-target.png",
+      "prompt": "prompts/selected-white-rounding.txt",
+      "references": [
+        "concepts/precision-studio.png"
+      ]
+    },
+    {
+      "output": "mvcad-features-v2.png",
+      "prompt": "prompts/compact-features-v2.txt",
+      "references": [
+        "mvcad-white-rounding-target.png",
+        "references/solidworks-features-toolbar.png",
+        "references/solidworks-sketch-toolbar.png"
+      ]
+    },
+    {
+      "output": "mvcad-sketch-v2.png",
+      "prompt": "prompts/compact-sketch-v2.txt",
+      "references": [
+        "mvcad-features-v2.png",
+        "references/solidworks-sketch-toolbar.png",
+        "references/solidworks-features-toolbar.png"
+      ]
+    }
+  ],
+  "unused_prompt": "prompts/network-studio.txt",
+  "note": "User preferred the white interface before generation of the third independent direction; the final image refines that preference and adds rounding.",
+  "companion_sketch": "mvcad-sketch-v2.png"
+}
