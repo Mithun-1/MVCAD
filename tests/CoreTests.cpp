@@ -70,6 +70,12 @@ private slots:
         for(size_t i=0;i<points.size();++i)QVERIFY((curve[i*8]-points[i]).length()<1e-10);
     }
     void splineHandlesLargeFiniteCoordinates(){
+        const auto largeLength=Vec3{3e200,4e200,0}.length();
+        QVERIFY(std::isfinite(largeLength));QVERIFY(std::abs(largeLength/5e200-1)<1e-15);
+        const auto largeDirection=Vec3{0,1e300,1e300}.normalized();
+        QVERIFY(largeDirection.finite());QVERIFY(std::abs(largeDirection.length()-1)<1e-15);
+        const auto high=std::numeric_limits<double>::max();
+        QVERIFY(std::isinf(Vec3{high,high,0}.length()));
         std::vector<Vec3> points{{1e200,0,0},{1e200,1e190,0},{1e200,2e190,1e190}};
         const auto curve=interpolateCurve(points,8);
         QCOMPARE(curve.front().x,points.front().x);QCOMPARE(curve.back().z,points.back().z);

@@ -40,6 +40,12 @@ open build/release/MVCAD.app
 
 Use **File → Open Example** to explore a bifurcation, or import `examples/bifurcation.csv`. Click a branch and apply its diameter. Left-drag orbits; right/middle-drag pans; the wheel zooms; F fits the model; Escape clears selection.
 
+## Development packages
+
+GitHub Actions produces a Windows x64 installer and portable ZIP, and a macOS Apple Silicon disk image. Downloadable prereleases are published under [GitHub Releases](https://github.com/Mithun-1/MVCAD/releases). These are development builds, not v1.0.
+
+The Windows installer installs the required Microsoft Visual C++ runtime. For the portable ZIP, extract the complete archive, install `bin/vc_redist.x64.exe` if the runtime is missing, then run `bin/MVCAD.exe`. Keep the adjacent libraries and plugins with the executable. For macOS, open the disk image and copy MVCAD.app to Applications. Packages are unsigned; signing and real-Mac interactive validation are tracked in the release roadmap.
+
 ## Input format
 
 ```csv

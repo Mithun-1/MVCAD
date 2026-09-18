@@ -79,6 +79,7 @@ MainWindow::MainWindow() {
         QPushButton {background:#f6f8fb;border:1px solid #c7d2df;padding:6px 12px;border-radius:3px;}
         QPushButton:hover {background:#e2eefb;}
         QPushButton#applyDiameter {background:#1675ce;border-color:#1675ce;color:white;}
+        QPushButton#applyDiameter:disabled {background:#edf1f5;border-color:#c7d2df;color:#9ca7b3;}
         QPushButton:disabled {color:#9ca7b3;background:#edf1f5;}
         QSplitter::handle {background:#dce3eb;width:2px;}
     )");

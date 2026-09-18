@@ -2,8 +2,9 @@
 #include <QString>
 #include <QByteArray>
 #include <algorithm>
-#include <vector>
 #include <cmath>
+#include <limits>
+#include <vector>
 
 namespace mvcad {
 struct Vec3 {
@@ -14,10 +15,20 @@ struct Vec3 {
     Vec3 operator/(double a) const { return *this * (1.0/a); }
     double dot(Vec3 b) const { return x*b.x+y*b.y+z*b.z; }
     Vec3 cross(Vec3 b) const { return {y*b.z-z*b.y,z*b.x-x*b.z,x*b.y-y*b.x}; }
-    double length() const { return std::hypot(x,y,z); }
-    Vec3 normalized() const {
+    double length() const {
+        if(std::isnan(x)||std::isnan(y)||std::isnan(z))
+            return std::numeric_limits<double>::quiet_NaN();
+        if(std::isinf(x)||std::isinf(y)||std::isinf(z))
+            return std::numeric_limits<double>::infinity();
         const auto scale=std::max({std::abs(x),std::abs(y),std::abs(z)});
-        if(!(scale>0) || !std::isfinite(scale)) return {1,0,0};
+        if(scale==0) return 0;
+        const auto sx=x/scale,sy=y/scale,sz=z/scale;
+        return scale*std::sqrt(sx*sx+sy*sy+sz*sz);
+    }
+    Vec3 normalized() const {
+        if(!finite()) return {1,0,0};
+        const auto scale=std::max({std::abs(x),std::abs(y),std::abs(z)});
+        if(!(scale>0)) return {1,0,0};
         const auto scaled=*this/scale;
         return scaled/scaled.length();
     }
