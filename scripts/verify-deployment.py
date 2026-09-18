@@ -32,7 +32,8 @@ def main():
                     raise RuntimeError(f"Non-system external dependency in {binary}: {dependency}")
     else:
         raise RuntimeError("Deployment check supports Windows and macOS")
-    env["QT_QPA_PLATFORM"] = "offscreen"
+    # Exercise the shipped native platform plugin. Deployment tools intentionally
+    # omit the offscreen plugin used by build-tree tests.
     screenshot = prefix.parent / "deployed-ui-smoke.png"
     subprocess.run([str(executable), "--smoke-test", "--screenshot", str(screenshot)],
                    cwd=prefix, env=env, check=True, timeout=180)
