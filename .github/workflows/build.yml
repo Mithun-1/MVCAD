@@ -76,7 +76,7 @@ jobs:
         run: cpack -C Release
       - name: Verify installed runtime
         run: |
-          cmake --install build/release --prefix build/deploy-check
+          cmake --install build/release --prefix "${{ github.workspace }}/build/deploy-check"
           python scripts/verify-deployment.py build/deploy-check
       - name: Preserve test report and screenshot
         if: always()
