@@ -2,6 +2,7 @@
 
 #include <QTest>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <utility>
 
@@ -42,6 +43,12 @@ void samePoint(Vec3 actual,Vec3 expected) {
 
 bool pointNear(Vec3 actual,Vec3 expected,double tolerance=1e-8) {
     return (actual-expected).length()<=tolerance;
+}
+
+double distanceToSegment(Vec3 point,Vec3 a,Vec3 b) {
+    const auto direction=b-a;const auto squared=direction.dot(direction);
+    const auto parameter=squared>0?std::clamp((point-a).dot(direction)/squared,0.,1.):0.;
+    return (point-(a+direction*parameter)).length();
 }
 
 } // namespace
@@ -169,20 +176,41 @@ private slots:
         const auto result=buildVessels(yNetwork(3,.3),.02);
         QCOMPARE(result.branches.size(),size_t(3));QCOMPARE(result.junctions.size(),size_t(1));
         QVERIFY2(result.junctions[0].state==VesselBuildState::Built,qPrintable(result.junctions[0].message));QVERIFY(result.nativeShape);
+        QVERIFY(result.junctions[0].maximumSeamAngle>=0);QVERIFY(result.junctions[0].maximumSeamAngle<1e-4);
+        QVERIFY(!result.junctions[0].guide.empty());
         const auto trimmedBranchVolume=std::numbers::pi*.7*(10*4+std::hypot(5.,8.)*(2.25+1));
         QVERIFY(std::isfinite(result.volume));QVERIFY(result.volume>trimmedBranchVolume);
         bool junctionTriangles=false;for(const auto& triangle:result.triangles) junctionTriangles|=triangle.branch==-1;
         QVERIFY(junctionTriangles);
     }
-    void twoAssignedArmsGetProvisionalTransition(){
+    void twoAssignedKinkFailsInsteadOfBuildingUnsmoothTransition(){
         const auto result=buildVessels(yNetwork(2),.02);
-        QCOMPARE(result.junctions.size(),size_t(1));QCOMPARE(result.junctions[0].state,VesselBuildState::Provisional);
+        QCOMPARE(result.junctions.size(),size_t(1));QCOMPARE(result.junctions[0].state,VesselBuildState::Failed);
+        QVERIFY(result.junctions[0].message.contains("tangent-continuous",Qt::CaseInsensitive));
         QCOMPARE(result.branches[2].state,VesselBuildState::Provisional);
         QCOMPARE(result.centerlines.size(),size_t(3));for(const auto& line:result.centerlines) QVERIFY(line.size()>=2);
-        const auto branchOnly=std::numbers::pi*.9*(10*4+std::hypot(5.,8.)*2.25);
-        QVERIFY(result.volume>branchOnly);
-        bool transition=false;for(const auto& triangle:result.triangles) transition|=triangle.branch==-1;
-        QVERIFY(transition);
+        for(const auto& triangle:result.triangles) QVERIFY(triangle.branch>=0);
+    }
+    void guidedPartialTransitionTracksCurvedSourceAndIsTangent(){
+        const std::vector<Vec3> main{{-30,0,0},{-15,0,0},{0,0,0},{15,4,0},{30,10,0}};
+        auto network=buildNetwork({{"main",main},{"side",{{0,0,0},{6,-15,0},{10,-30,0}}}});
+        QCOMPARE(network.branches.size(),size_t(3));
+        setBranchParameters(network,0,8,.1,.1);setBranchParameters(network,1,6,.1,.1);
+        const auto result=buildVessels(network,.01);
+        QCOMPARE(result.junctions.size(),size_t(1));
+        const auto& junction=result.junctions.front();
+        QVERIFY2(junction.state==VesselBuildState::Provisional,qPrintable(junction.message));
+        QVERIFY(junction.message.contains("exact centerline-guided",Qt::CaseInsensitive));
+        QVERIFY(junction.maximumSeamAngle>=0);QVERIFY(junction.maximumSeamAngle<1e-4);
+        QVERIFY(junction.guide.size()>=17);
+        double maximumDepartureFromSampleChords=0;
+        for(const auto& value:junction.guide) {
+            double nearest=std::numeric_limits<double>::infinity();
+            for(size_t i=1;i<main.size();++i)
+                nearest=std::min(nearest,distanceToSegment(value,main[i-1],main[i]));
+            maximumDepartureFromSampleChords=std::max(maximumDepartureFromSampleChords,nearest);
+        }
+        QVERIFY(maximumDepartureFromSampleChords>.01);
     }
     void invalidJunctionRadiusFailsHonestly(){
         const auto result=buildVessels(yNetwork(3,.3),.02,2);
@@ -216,10 +244,10 @@ private slots:
         const auto original=network;
         const auto demo=buildVessels(original,.001);
         QCOMPARE(demo.junctions.size(),size_t(2));
-        QCOMPARE(demo.junctions[0].index,3);QCOMPARE(demo.junctions[0].state,VesselBuildState::Provisional);
-        QVERIFY(demo.junctions[0].message.contains("one arm remains unassigned",Qt::CaseInsensitive));
+        QCOMPARE(demo.junctions[0].index,3);QCOMPARE(demo.junctions[0].state,VesselBuildState::Failed);
+        QVERIFY(demo.junctions[0].message.contains("tangent-continuous",Qt::CaseInsensitive));
         QCOMPARE(demo.junctions[1].index,6);QCOMPARE(demo.junctions[1].state,VesselBuildState::Built);
-        QVERIFY(demo.junctions[1].message.contains("joined junction solid built",Qt::CaseInsensitive));
+        QVERIFY(demo.junctions[1].message.contains("centerline-guided junction solid built",Qt::CaseInsensitive));
         verify(original);
         setBranchParameters(network,1,6.25,.15,.10);
         verify(network);

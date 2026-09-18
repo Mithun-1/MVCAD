@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Document.h"
+#include "DepthRaster.h"
 #include <QWidget>
 #include <QQuaternion>
 #include <QPolygonF>
@@ -26,7 +27,7 @@ protected:
     void mouseMoveEvent(QMouseEvent*)override;void mouseReleaseEvent(QMouseEvent*)override;
     void wheelEvent(QWheelEvent*)override;void keyPressEvent(QKeyEvent*)override;
 private:
-    struct Face {QPolygonF polygon;double depth;QColor color;int branch;};
+    DepthRaster raster_;
     mvcad::Document document_;mvcad::Preview preview_;mvcad::CadResult cad_;
     mvcad::VesselResult vessels_;
     mvcad::Vec3 center_;double span_=80,zoom_=1,precision_=1e-3;
@@ -34,7 +35,7 @@ private:
     int selected_=-1,plane_=0,sketch_=-1;
     bool labels_=false,centerlines_=false,planes_=true,dragged_=false;
     mvcad::ProfileType tool_=mvcad::ProfileType::Rectangle;
-    std::vector<QPointF> drawing_;std::vector<int> selectedPoints_;std::vector<Face> faces_;
+    std::vector<QPointF> drawing_;std::vector<int> selectedPoints_;
     QVector3D rotate(mvcad::Vec3)const;QPointF project(mvcad::Vec3)const;double scale()const;
     QPointF sketchPoint(QPointF)const;QPolygonF planePolygon(int)const;
     void finishPolyline();void drawProfile(QPainter&,const mvcad::Sketch&,const QColor&);

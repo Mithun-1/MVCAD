@@ -74,6 +74,10 @@ jobs:
       - name: Package
         working-directory: build/release
         run: cpack -C Release
+      - name: Verify installed runtime
+        run: |
+          cmake --install build/release --prefix build/deploy-check
+          python scripts/verify-deployment.py build/deploy-check
       - name: Preserve test report and screenshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -84,8 +88,10 @@ jobs:
             build/release/core-results.txt
             build/release/cad-results.txt
             build/release/document-results.txt
+            build/release/viewport-results.txt
             build/release/ui-smoke.png
             build/release/ui-smoke-error.txt
+            build/deployed-ui-smoke.png
       - uses: actions/upload-artifact@v4
         with:
           name: MVCAD-${{ matrix.package }}

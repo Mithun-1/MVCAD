@@ -51,6 +51,9 @@ struct VesselItemResult {
     int index = -1;
     VesselBuildState state = VesselBuildState::Provisional;
     QString message;
+    // Successful guided junctions expose validation evidence for diagnostics.
+    double maximumSeamAngle = -1;
+    std::vector<Vec3> guide;
 };
 
 struct VesselResult {

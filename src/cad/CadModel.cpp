@@ -4,12 +4,14 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_BooleanOperation.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
@@ -17,7 +19,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
-#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -27,11 +29,14 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GeomAdaptor_Curve.hxx>
 #include <Geom_Curve.hxx>
+#include <GeomLProp_SLProps.hxx>
 #include <GeomFill_Trihedron.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Precision.hxx>
+#include <Law_Interpol.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <TopAbs_ShapeEnum.hxx>
@@ -45,6 +50,7 @@
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
+#include <TColgp_Array1OfPnt2d.hxx>
 #include <TColStd_HArray1OfReal.hxx>
 #include <BRep_Builder.hxx>
 #include <TopoDS_Compound.hxx>
@@ -58,11 +64,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <utility>
 
 namespace mvcad {
@@ -305,6 +311,8 @@ struct OwnedShape {
     TopoDS_Shape shape;
     std::vector<OwnedFace> owners;
     std::vector<TopoDS_Shape> sectionEdges;
+    double maximumSeamAngle=-1;
+    std::vector<Vec3> guide;
 };
 
 OwnedShape ownedShape(const TopoDS_Shape& shape,int owner) {
@@ -366,6 +374,8 @@ OwnedShape fuseOwned(const OwnedShape& left,const OwnedShape& right) {
     result.owners=mergedOwners(operation,shape,left.owners,right.owners);
     auto prior=left.sectionEdges;prior.insert(prior.end(),right.sectionEdges.begin(),right.sectionEdges.end());
     result.sectionEdges=mergedSectionEdges(operation,prior);
+    result.maximumSeamAngle=std::max(left.maximumSeamAngle,right.maximumSeamAngle);
+    result.guide=left.guide;result.guide.insert(result.guide.end(),right.guide.begin(),right.guide.end());
     return result;
 }
 
@@ -509,7 +519,15 @@ double parameterAtLength(const GeomAdaptor_Curve& adaptor,double first,double le
     return finder.Parameter();
 }
 
-struct RingData { gp_Pnt center; gp_Dir towardNode; double radius=0; int branch=-1; };
+struct RingData {
+    gp_Pnt center;
+    gp_Dir towardNode;
+    double radius=0;
+    int branch=-1;
+    Handle(Geom_Curve) guide;
+    double ringParameter=0,nodeParameter=0;
+    TopoDS_Shape branchShape;
+};
 struct BranchGeometry { OwnedShape solid; RingData startRing; RingData endRing; };
 
 BranchGeometry buildBranchGeometry(const Network& network,const Branch& branch,int index) {
@@ -538,28 +556,136 @@ BranchGeometry buildBranchGeometry(const Network& network,const Branch& branch,i
     auto shape=pipe.Shape();
     if(shape.IsNull()||solidCount(shape)!=1||!BRepCheck_Analyzer(shape).IsValid()) fail("Vessel sweep is not one valid solid.");
     BranchGeometry result;result.solid=ownedShape(shape,index);
-    result.startRing={startPoint,gp_Dir(startTangent.Reversed()),radius,index};
-    result.endRing={endPoint,gp_Dir(endTangent),radius,index};
+    result.startRing={startPoint,gp_Dir(startTangent.Reversed()),radius,index,
+                      range.curve,first,range.first,result.solid.shape};
+    result.endRing={endPoint,gp_Dir(endTangent),radius,index,
+                    range.curve,last,range.last,result.solid.shape};
     return result;
 }
 
-OwnedShape loftSections(const std::vector<std::tuple<gp_Pnt,gp_Dir,double>>& sections,int owner=-1) {
-    if(sections.size()<2) fail("A vessel transition requires at least two sections.");
-    BRepOffsetAPI_ThruSections loft(true,false,Precision::Confusion());loft.CheckCompatibility(true);
-    for(const auto& [center,normal,radius]:sections) loft.AddWire(circleWire(center,normal,radius));
-    loft.Build();if(!loft.IsDone()) fail("Could not construct the varying-radius vessel transition.");
-    auto shape=loft.Shape();
-    if(shape.IsNull()||solidCount(shape)!=1||!BRepCheck_Analyzer(shape).IsValid()) fail("Vessel transition is not one valid solid.");
+TopoDS_Edge directedGuideEdge(const RingData& ring,bool ringToNode) {
+    if(ring.guide.IsNull()||ring.ringParameter==ring.nodeParameter)
+        fail("Vessel transition has no usable centerline guide.");
+    const auto low=std::min(ring.ringParameter,ring.nodeParameter);
+    const auto high=std::max(ring.ringParameter,ring.nodeParameter);
+    BRepBuilderAPI_MakeEdge builder(ring.guide,low,high);
+    if(!builder.IsDone()) fail("Could not build the vessel transition guide edge.");
+    auto edge=builder.Edge();
+    const auto from=ringToNode?ring.ringParameter:ring.nodeParameter;
+    const auto to=ringToNode?ring.nodeParameter:ring.ringParameter;
+    if(to<from) edge.Reverse();
+    return edge;
+}
+
+gp_Vec directedTangent(const RingData& ring,bool ringToNode,bool atEnd) {
+    const auto from=ringToNode?ring.ringParameter:ring.nodeParameter;
+    const auto to=ringToNode?ring.nodeParameter:ring.ringParameter;
+    gp_Pnt location;gp_Vec tangent;
+    ring.guide->D1(atEnd?to:from,location,tangent);
+    if(to<from) tangent.Reverse();
+    if(tangent.SquareMagnitude()<=Precision::SquareConfusion())
+        fail("Vessel transition guide has an undefined tangent.");
+    return tangent;
+}
+
+double edgeLength(const TopoDS_Edge& edge) {
+    BRepAdaptor_Curve adaptor(edge);
+    const auto length=GCPnts_AbscissaPoint::Length(adaptor,adaptor.FirstParameter(),adaptor.LastParameter(),Precision::Confusion());
+    if(!std::isfinite(length)||length<=Precision::Confusion()) fail("Vessel transition guide has no usable length.");
+    return length;
+}
+
+std::vector<Vec3> guideSamples(const RingData& ring,bool ringToNode) {
+    const auto from=ringToNode?ring.ringParameter:ring.nodeParameter;
+    const auto to=ringToNode?ring.nodeParameter:ring.ringParameter;
+    std::vector<Vec3> samples;samples.reserve(9);
+    for(int i=0;i<=8;++i) samples.push_back(point(ring.guide->Value(from+(to-from)*i/8.0)));
+    return samples;
+}
+
+gp_Dir lateralNormalAt(const TopoDS_Shape& shape,gp_Pnt sample,gp_Dir radial,double radius) {
+    double best=-1;std::optional<gp_Dir> normal;
+    for(TopExp_Explorer explorer(shape,TopAbs_FACE);explorer.More();explorer.Next()) {
+        const auto face=TopoDS::Face(explorer.Current());const auto surface=BRep_Tool::Surface(face);
+        if(surface.IsNull()) continue;
+        GeomAPI_ProjectPointOnSurf projection(sample,surface);
+        for(Standard_Integer i=1;i<=projection.NbPoints();++i) {
+            if(projection.Distance(i)>std::max(1e-5,radius*1e-5)) continue;
+            Standard_Real u=0,v=0;projection.Parameters(i,u,v);
+            BRepClass_FaceClassifier classifier(face,gp_Pnt2d(u,v),Precision::Confusion()*10);
+            if(classifier.State()!=TopAbs_IN&&classifier.State()!=TopAbs_ON) continue;
+            GeomLProp_SLProps properties(surface,u,v,1,Precision::Confusion());
+            if(!properties.IsNormalDefined()) continue;
+            const auto candidate=properties.Normal();const auto score=std::abs(candidate.Dot(radial));
+            if(score>best) {best=score;normal=candidate;}
+        }
+    }
+    if(!normal||best<.5) fail("Could not evaluate a lateral vessel surface normal at the transition seam.");
+    return *normal;
+}
+
+double seamAngle(const TopoDS_Shape& branch,const TopoDS_Shape& transition,
+                 gp_Pnt center,gp_Dir tangent,double radius) {
+    gp_Vec reference=std::abs(tangent.Z())<.9?gp_Vec(0,0,1):gp_Vec(1,0,0);
+    gp_Vec x=gp_Vec(tangent).Crossed(reference);x.Normalize();
+    const gp_Vec y=gp_Vec(tangent).Crossed(x);
+    double maximum=0;
+    for(int i=0;i<8;++i) {
+        const auto angle=2*std::numbers::pi*i/8;
+        const gp_Dir radial(x*std::cos(angle)+y*std::sin(angle));
+        const auto sample=center.Translated(gp_Vec(radial)*radius);
+        const auto a=lateralNormalAt(branch,sample,radial,radius);
+        const auto b=lateralNormalAt(transition,sample,radial,radius);
+        maximum=std::max(maximum,std::acos(std::clamp(std::abs(a.Dot(b)),0.0,1.0)));
+    }
+    return maximum;
+}
+
+OwnedShape guidedSweep(const TopoDS_Wire& spine,gp_Pnt start,gp_Dir tangent,
+                       double startRadius,double endRadius,double length,int owner) {
+    if(!std::isfinite(startRadius)||!std::isfinite(endRadius)||startRadius<=Precision::Confusion()
+       ||endRadius<=Precision::Confusion()||!std::isfinite(length)||length<=Precision::Confusion())
+        fail("Vessel transition radii or guide length are invalid.");
+    TColgp_Array1OfPnt2d values(1,2);
+    values.SetValue(1,gp_Pnt2d(0,1));values.SetValue(2,gp_Pnt2d(length,endRadius/startRadius));
+    Handle(Law_Interpol) law=new Law_Interpol();
+    law->Set(values,0,0,false);
+    const auto profile=circleWire(start,tangent,startRadius);
+    BRepOffsetAPI_MakePipeShell sweep(spine);
+    sweep.SetForceApproxC1(true);
+    sweep.SetLaw(profile,law,false,false);
+    sweep.Build();
+    if(!sweep.IsDone()||!sweep.MakeSolid()) fail("Could not build the centerline-guided vessel transition.");
+    auto shape=sweep.Shape();
+    if(shape.IsNull()||solidCount(shape)!=1||!BRepCheck_Analyzer(shape).IsValid())
+        fail("Centerline-guided vessel transition is not one valid solid.");
     return ownedShape(shape,owner);
 }
 
 OwnedShape partialTransition(Vec3 node,int nodeIndex,const RingData& first,const RingData& second) {
-    const auto chord=point(second.center)-point(first.center);
-    if(chord.length()<=Precision::Confusion()) fail("Vessel transition endpoints are coincident.");
-    const gp_Dir middleDirection(vector(chord));
-    return loftSections({{first.center,first.towardNode,first.radius},
-                         {point(node),middleDirection,(first.radius+second.radius)/2},
-                         {second.center,second.towardNode,second.radius}},-(nodeIndex+1));
+    if(first.guide.IsNull()||second.guide.IsNull()) fail("Vessel transition is missing an exact centerline guide.");
+    if(first.guide->Value(first.nodeParameter).Distance(point(node))>Precision::Confusion()*10
+       ||second.guide->Value(second.nodeParameter).Distance(point(node))>Precision::Confusion()*10)
+        fail("Vessel transition guides do not meet at the junction node.");
+    const auto firstEdge=directedGuideEdge(first,true);
+    const auto secondEdge=directedGuideEdge(second,false);
+    const gp_Dir incoming(directedTangent(first,true,true));
+    const gp_Dir outgoing(directedTangent(second,false,false));
+    if(incoming.Dot(outgoing)<std::cos(1e-3))
+        fail("Assigned vessel centerlines do not form a tangent-continuous provisional guide at the junction.");
+    BRepBuilderAPI_MakeWire wire;wire.Add(firstEdge);wire.Add(secondEdge);
+    if(!wire.IsDone()) fail("Could not join the exact vessel centerline tails into a transition guide.");
+    const auto length=edgeLength(firstEdge)+edgeLength(secondEdge);
+    auto result=guidedSweep(wire.Wire(),first.center,gp_Dir(directedTangent(first,true,false)),
+                            first.radius,second.radius,length,-(nodeIndex+1));
+    result.maximumSeamAngle=std::max(seamAngle(first.branchShape,result.shape,first.center,first.towardNode,first.radius),
+                                     seamAngle(second.branchShape,result.shape,second.center,second.towardNode,second.radius));
+    if(!std::isfinite(result.maximumSeamAngle)||result.maximumSeamAngle>1e-4)
+        fail("Centerline-guided provisional transition is not tangent-continuous at a branch seam.");
+    result.guide=guideSamples(first,true);
+    auto secondSamples=guideSamples(second,false);
+    result.guide.insert(result.guide.end(),secondSamples.begin()+1,secondSamples.end());
+    return result;
 }
 
 OwnedShape fullJunction(Vec3 node,int nodeIndex,const std::vector<RingData>& rings,double requestedRadius) {
@@ -577,8 +703,15 @@ OwnedShape fullJunction(Vec3 node,int nodeIndex,const std::vector<RingData>& rin
     if(!sphere.IsDone()||sphereShape.IsNull()) fail("Could not construct the junction core.");
     const auto owner=-(nodeIndex+1);auto core=ownedShape(sphereShape,owner);
     for(const auto& ring:rings) {
-        auto arm=loftSections({{ring.center,ring.towardNode,ring.radius},
-                               {point(node),ring.towardNode,coreRadius}},owner);
+        const auto edge=directedGuideEdge(ring,true);
+        BRepBuilderAPI_MakeWire wire(edge);
+        if(!wire.IsDone()) fail("Could not construct the exact vessel junction arm guide.");
+        auto arm=guidedSweep(wire.Wire(),ring.center,gp_Dir(directedTangent(ring,true,false)),
+                             ring.radius,coreRadius*.8,edgeLength(edge),owner);
+        arm.maximumSeamAngle=seamAngle(ring.branchShape,arm.shape,ring.center,ring.towardNode,ring.radius);
+        if(!std::isfinite(arm.maximumSeamAngle)||arm.maximumSeamAngle>1e-4)
+            fail("Centerline-guided junction arm is not tangent-continuous at its branch seam.");
+        arm.guide=guideSamples(ring,true);
         core=fuseOwned(core,arm);
     }
     if(solidCount(core.shape)!=1) fail("Junction core did not form one joined solid.");
@@ -593,7 +726,8 @@ OwnedShape fullJunction(Vec3 node,int nodeIndex,const std::vector<RingData>& rin
         auto rounded=fillet.Shape();
         if(rounded.IsNull()||solidCount(rounded)!=1||!BRepCheck_Analyzer(rounded).IsValid())
             fail("Requested junction round produced an invalid solid.");
-        core=ownedShape(rounded,owner);
+        const auto maximumSeamAngle=core.maximumSeamAngle;auto guide=std::move(core.guide);
+        core=ownedShape(rounded,owner);core.maximumSeamAngle=maximumSeamAngle;core.guide=std::move(guide);
     }
     return core;
 }
@@ -835,8 +969,11 @@ static VesselResult buildVesselsImpl(const Network& network,double deflection,do
         else if(assigned<incident) {
             if(incident==3&&rings.size()==2) try {
                 auto transition=partialTransition(network.nodes[static_cast<size_t>(node)].point,node,rings[0],rings[1]);
+                const auto maximumSeamAngle=transition.maximumSeamAngle;auto guide=transition.guide;
                 mergeConnector(rings,std::move(transition));
-                status={node,VesselBuildState::Provisional,"Two assigned arms have a varying-radius provisional transition; one arm remains unassigned."};
+                status={node,VesselBuildState::Provisional,
+                        "Two assigned arms have an exact centerline-guided varying-radius transition; one arm remains unassigned.",
+                        maximumSeamAngle,std::move(guide)};
             } catch(const Standard_Failure& error) {
                 status={node,VesselBuildState::Failed,failureText(error)};
             } catch(const std::exception& error) {
@@ -844,8 +981,11 @@ static VesselResult buildVesselsImpl(const Network& network,double deflection,do
             }
         } else if(incident>=3&&static_cast<int>(rings.size())==incident) try {
             auto junction=fullJunction(network.nodes[static_cast<size_t>(node)].point,node,rings,junctionRadius);
+            const auto maximumSeamAngle=junction.maximumSeamAngle;auto guide=junction.guide;
             mergeConnector(rings,std::move(junction));
-            status={node,VesselBuildState::Built,junctionRadius>0?"Joined and rounded junction solid built.":"Joined junction solid built."};
+            status={node,VesselBuildState::Built,
+                    junctionRadius>0?"Joined and rounded centerline-guided junction solid built.":"Joined centerline-guided junction solid built.",
+                    maximumSeamAngle,std::move(guide)};
         } catch(const Standard_Failure& error) {
             status={node,VesselBuildState::Failed,failureText(error)};
         } catch(const std::exception& error) {

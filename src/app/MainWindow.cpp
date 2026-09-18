@@ -198,11 +198,11 @@ void MainWindow::rebuild(bool fit) {
         item->setData(0,Qt::UserRole,i);if(i==selected_)tree_->setCurrentItem(item);
     }
     auto states=mvcad::junctionStates(document_.network);QStringList lines,details;
-    for(const auto& state:states){QString status="incomplete";for(const auto& result:vessels.junctions)if(result.index==state.node){status=result.state==mvcad::VesselBuildState::Built?"joined":result.state==mvcad::VesselBuildState::Failed?"FAILED":"provisional";details<<QString("J%1: %2").arg(lines.size()+1).arg(result.message);}lines<<QString("J%1: %2/%3 diameters · %4").arg(lines.size()+1).arg(state.assigned).arg(state.incident).arg(status);}
+    for(const auto& state:states){QString status="incomplete";for(const auto& result:vessels.junctions)if(result.index==state.node){status=result.state==mvcad::VesselBuildState::Built?"joined":result.state==mvcad::VesselBuildState::Failed?"FAILED":state.assigned<2?"incomplete":"provisional";details<<QString("J%1: %2").arg(lines.size()+1).arg(result.message);}lines<<QString("J%1: %2/%3 diameters · %4").arg(lines.size()+1).arg(state.assigned).arg(state.incident).arg(status);}
     junctions_->setText(lines.isEmpty()?"No junctions":lines.join('\n'));
     junctions_->setToolTip(details.join('\n'));
     const bool hasNetwork=!document_.network.branches.empty();parameters_->setVisible(hasNetwork);junctions_->parentWidget()->setVisible(hasNetwork);
-    findChild<QLabel*>("modelingNotice")->setText(hasNetwork?"Purple: provisional transition. Hover Junctions for build details. STEP export remains under development.":document_.cad.features.empty()?"Select a reference plane, then New Sketch. Draw a closed profile and choose Extruded Boss/Base.":"Exact CAD solid. Double-click a sketch or feature to edit and regenerate.");
+    findChild<QLabel*>("modelingNotice")->setText(hasNetwork?"Purple: provisional transition. Hover Junctions for build details. STEP export remains under development.":!document_.points.empty()?"Select imported points, then Curve Through Points to construct a centerline.":document_.cad.features.empty()?"Select a reference plane, then New Sketch. Draw a closed profile and choose Extruded Boss/Base.":"Exact CAD solid. Double-click a sketch or feature to edit and regenerate.");
     viewport_->setDocument(document_,cad,precision_,fit,&vessels);rebuilding_=false;selectBranch(selected_);
     if(summary_)summary_->setText(QString("%1 solid features · %2 branches  |  Drag to orbit · Wheel to zoom").arg(document_.cad.features.size()).arg(document_.network.branches.size()));
     updateTitle();

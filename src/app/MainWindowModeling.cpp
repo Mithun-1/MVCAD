@@ -33,7 +33,7 @@ void MainWindow::handleTreeSelection(){
     if(rebuilding_)return;auto* item=tree_->currentItem();if(!item)return;
     selectedPoints_.clear();for(auto* selected:tree_->selectedItems())if(selected->data(0,Qt::UserRole+2).isValid())selectedPoints_.push_back(selected->data(0,Qt::UserRole+2).toInt());viewport_->setSelectedPoints(selectedPoints_);
     selectedSketch_=-1;selectedFeature_=-1;
-    if(item->data(0,Qt::UserRole).isValid()){selectBranch(item->data(0,Qt::UserRole).toInt());return;}
+    if(item->data(0,Qt::UserRole).isValid()){if(sketchMode_){sketchMode_=false;viewport_->editSketch(-1);}selectBranch(item->data(0,Qt::UserRole).toInt());return;}
     selected_=-1;viewport_->setSelected(-1);parameters_->setEnabled(false);
     if(item->data(0,Qt::UserRole+1).isValid())selectPlane(item->data(0,Qt::UserRole+1).toInt());
     if(item->data(0,Qt::UserRole+3).isValid())selectedSketch_=item->data(0,Qt::UserRole+3).toInt();

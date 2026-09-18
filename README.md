@@ -12,7 +12,7 @@ A standalone C++ / Qt 6 Widgets desktop application for creating dimensionless m
 - Settings: display precision defaults to **0.001**, with finer values down to **0.0001**. This controls mesh chord deviation; analytic circles and solid geometry remain exact.
 - CSV imports points only. Curve Through Points constructs an interpolated centerline from an ordered selection. Connections split the network into independently selectable branches.
 - Circular branch solids with independent junction-end setbacks (10% default), measured along centerline arc length. Free ends extend to their endpoints.
-- Automatic unequal-diameter provisional transitions when two branches at a three-way junction are assigned. Fully assigned supported junctions are fused and checked as joined solids. Failed junctions are reported explicitly.
+- Unequal-diameter provisional transitions follow the exact centerline when two assigned branches form a tangent-continuous guide. Radius changes have zero slope at both ends; surface normals are checked around both seams. Fully assigned supported junctions are fused and checked as joined solids. Failed junctions are reported explicitly.
 - Round Junctions applies a radius to supported junction intersection edges; invalid rounding preserves the previous model.
 - Schema-2 `.mvcad` part files retain points, network parameters, sketches and extrusion history. Schema-1 files remain readable.
 - Clean geometry viewport, optional centerlines/labels, orbit, pan, zoom and fit.
@@ -44,7 +44,7 @@ P7,10,-30,0
 
 The header `x,y,z` is also accepted; IDs are then generated. Legacy `curve_id,x,y,z` files import as points, without automatically constructing their old curves. Import appends points; Curve Through Points provides explicit point ordering and a connection tolerance. Interior shared points and endpoints within tolerance of the actual interpolated centerline establish junctions, including when the main centerline is created later. Arbitrary spatial crossings do not connect. A projected connection inserts a shared interpolation point and regenerates the affected curve; its shape can change slightly. Imported source points remain separately preserved. Unchanged branches retain their diameter assignments when another curve is added; newly split branches require assignment.
 
-Use File → Open Example for an already constructed network, or open `examples/rounded-junction.mvcad` for a joined Y-junction with a 0.1 round and 30% setbacks. Junction feasibility depends on local curvature, angles, radii and available setback. Increase setbacks when a junction reports insufficient room. A failed junction leaves the individual branch solids visible and is never marked complete. Round Junctions currently uses one radius for all fully assigned junctions. This is an initial construction method, not a guarantee of smooth or valid geometry for every research network. Fine tessellation can take several seconds and large-network performance remains under development.
+Open `examples/centerline-guided-blend.mvcad` for the curved 8-to-6 provisional transition, or `examples/rounded-junction.mvcad` for a joined Y-junction with a 0.1 round and 30% setbacks. A partial transition across separate centerlines with a tangent discontinuity is rejected. Fully assigned junctions use guided arms meeting a central Boolean union; Round Junctions smooths supported intersection edges. Tangency is checked at the branch seams, but global smoothness of the central union is not guaranteed. Junction feasibility depends on curvature, angles, radii and available setback. Increase setbacks when a junction reports insufficient room. A failed junction leaves individual branch solids visible and is never marked complete. Round Junctions currently uses one radius for all fully assigned junctions. Fine tessellation can take several seconds and large-network performance remains under development.
 
 Dimensions have no unit suffix. Source numeric values are retained in the part file. CSV limits are 16 MB / 50,000 points; native files are limited to 32 MB.
 
@@ -75,7 +75,7 @@ ctest --preset release
 open build/release/MVCAD.app
 ```
 
-Automated checks cover analytic extrusion/cut volumes, invalid operations, vessel solids, unequal-diameter transitions, junction fillets, point connections, persistence and a native UI smoke workflow. A real Mac interactive test remains required before v1.0.
+Automated checks cover analytic extrusion/cut volumes, invalid operations, vessel solids, curved-guide transitions and seam tangency, junction fillets, point connections, persistence, viewport depth/lighting and a native UI smoke workflow. A real Mac interactive test remains required before v1.0.
 
 ## Development packages
 
