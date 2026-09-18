@@ -26,8 +26,14 @@ def main():
                        if p.is_file() and p.parent.name == "A" and p.suffix == ""]
         for binary in candidates:
             output = subprocess.check_output(["otool", "-L", str(binary)], text=True)
+            # -L includes a dylib's own LC_ID_DYLIB, which is not a loaded
+            # dependency. Qt plugins may retain an absolute self identity.
+            identities = {line.strip() for line in subprocess.check_output(
+                ["otool", "-D", str(binary)], text=True).splitlines()[1:]}
             for line in output.splitlines()[1:]:
                 dependency = line.strip().split(" (", 1)[0]
+                if dependency in identities:
+                    continue
                 if dependency.startswith("/") and not dependency.startswith(("/System/Library/", "/usr/lib/")):
                     raise RuntimeError(f"Non-system external dependency in {binary}: {dependency}")
     else:
