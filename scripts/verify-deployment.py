@@ -31,6 +31,9 @@ def main():
             identities = {line.strip() for line in subprocess.check_output(
                 ["otool", "-D", str(binary)], text=True).splitlines()[1:]}
             for line in output.splitlines()[1:]:
+                # Universal binaries repeat the file header for each architecture.
+                if line.rstrip().endswith(":"):
+                    continue
                 dependency = line.strip().split(" (", 1)[0]
                 if dependency in identities:
                     continue
