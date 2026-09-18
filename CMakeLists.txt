@@ -59,6 +59,12 @@ install(TARGETS MVCAD BUNDLE DESTINATION . RUNTIME DESTINATION ${CMAKE_INSTALL_B
 if(WIN32)
   file(GLOB mvcad_occt_runtime "${OpenCASCADE_BINARY_DIR}/TK*.dll")
   install(FILES ${mvcad_occt_runtime} DESTINATION ${CMAKE_INSTALL_BINDIR})
+elseif(APPLE)
+  # macdeployqt copies Qt, but does not reliably discover the kernel's @rpath
+  # dependencies. Include all versioned names and symlinks before deployment.
+  install(DIRECTORY "${OpenCASCADE_LIBRARY_DIR}/"
+    DESTINATION MVCAD.app/Contents/Frameworks
+    FILES_MATCHING PATTERN "libTK*.dylib")
 endif()
 qt_generate_deploy_app_script(TARGET MVCAD OUTPUT_SCRIPT deploy_script NO_UNSUPPORTED_PLATFORM_ERROR)
 install(SCRIPT ${deploy_script})
