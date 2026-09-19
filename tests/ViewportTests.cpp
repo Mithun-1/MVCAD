@@ -1,5 +1,6 @@
 #include "app/DepthRaster.h"
 #include "app/ViewportMath.h"
+#include "app/InteractionMesh.h"
 
 #include <QTest>
 #include <array>
@@ -20,6 +21,35 @@ ScreenTriangle triangleAt(float z) {
 class ViewportTests:public QObject {
     Q_OBJECT
 private slots:
+    void interactionPreviewPreservesFineMeshAndOwnership(){
+        using mvcad::Triangle;using mvcad::Vec3;
+        const Triangle face{{0,0,0},{1,0,0},{0,1,0},7};
+        std::vector<Triangle> fine(30000,face);
+        fine.push_back({face.a,face.b,face.c,8});
+        fine.push_back({face.a,face.c,face.b,7});
+        const auto coarse=interactionMesh(fine);
+        QCOMPARE(coarse.size(),size_t(3));
+        QCOMPARE(fine.size(),size_t(30002));
+        QCOMPARE(fine.front().b.x,1.);QCOMPARE(fine.front().c.y,1.);
+        QCOMPARE(coarse[0].branch,7);QCOMPARE(coarse[1].branch,8);
+        QVERIFY((coarse[2].b-coarse[2].a).cross(coarse[2].c-coarse[2].a).z<0);
+        for(size_t i=0;i<2;++i){const auto& triangle=coarse[i];
+            QVERIFY((triangle.b-triangle.a).cross(triangle.c-triangle.a).z>0);
+            QVERIFY((triangle.a-face.a).length()<.004);
+            QVERIFY((triangle.b-face.b).length()<.004);
+            QVERIFY((triangle.c-face.c).length()<.004);
+        }
+    }
+    void transparentBodiesCompositeOverOpaqueGeometry(){
+        DepthRaster opaque,near,far;opaque.clear(16,16);near.clear(16,16);far.clear(16,16);
+        opaque.triangle(triangleAt(.2f),blue,1);
+        far.triangle(triangleAt(.1f),red,2); // Occluded by opaque geometry.
+        near.triangle(triangleAt(.8f),qPremultiply(qRgba(220,40,30,128)),3);
+        opaque.composite({&near,&far});
+        QCOMPARE(opaque.ownerAt(4,4),3);QCOMPARE(qAlpha(opaque.image().pixel(4,4)),255);
+        QVERIFY(qRed(opaque.image().pixel(4,4))>100);QVERIFY(qBlue(opaque.image().pixel(4,4))>100);
+        QVERIFY(opaque.depthAt(4,4)>.79);
+    }
     void smallMeshFacesKeepTheirLightingNormal(){
         for(double scale:{1e-9,1e-5,1.,1e5}){
             const auto normal=unitTriangleNormal({0,0,0},{scale,0,0},{0,scale,0});

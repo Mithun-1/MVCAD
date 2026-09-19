@@ -41,6 +41,12 @@ def main():
                     raise RuntimeError(f"Non-system external dependency in {binary}: {dependency}")
     else:
         raise RuntimeError("Deployment check supports Windows and macOS")
+    resources = prefix / "MVCAD.app/Contents/Resources" if sys.platform == "darwin" else prefix
+    for relative in ("README.md", "docs/THIRD_PARTY.md", "examples/connected-points.csv"):
+        if not (resources / relative).is_file():
+            raise RuntimeError(f"Missing packaged resource: {resources / relative}")
+    if sys.platform == "win32" and not (executable.parent / "vc_redist.x64.exe").is_file():
+        raise RuntimeError("The Windows installer requires the bundled Microsoft runtime installer")
     # Exercise the shipped native platform plugin. Deployment tools intentionally
     # omit the offscreen plugin used by build-tree tests.
     screenshot = prefix.parent / "deployed-ui-smoke.png"

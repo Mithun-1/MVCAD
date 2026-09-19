@@ -1,47 +1,41 @@
-# v1.0 release gates
+# 0.4.0 release gates
 
-Version 0.2.0 is a development milestone. Do not tag v1.0 until the requirements below are implemented and validated.
+0.4.0 is an unpublished development milestone. The product scope is centerline modeling and automatic swept bodies.
 
-## Foundation
+## Product scope
 
-- Native Qt Widgets application; compact Features / Sketch / Centerlines / Auto Sweep tabs.
-- CSV import, point/branch graph, editable branch diameters/setbacks and native part persistence.
-- Undo/redo, transactional error handling, clean default viewport and optional display overlays.
-- Windows MSVC and macOS build/test/package automation.
+- CSV and manually entered point sets with editable coordinates, ordering and names.
+- Curves through ordered centerline points with connection tolerance and branch detection.
+- Dependent mirrored centerlines with source and axis regeneration.
+- Auto Sweep bodies with editable diameters, junction-end setbacks and supported rounded junction transitions.
+- Body hide/show/transparency, native part persistence, undo/redo and transactional failure handling.
+- Default display precision of 0.001 and a finest setting of 0.0001.
+- Native centerline part compatibility across the current schema.
 
-## CAD geometry and interchange
+Classic sketching, extrusion, cuts, revolve, manual sweep, general CAD fillets and related classic modeling features are outside the product scope and are removed from the UI. Legacy classic CAD parts are rejected on open and preserved as files; centerline parts remain supported.
 
-- Evaluate Open CASCADE using real input curves plus synthetic Y/T junctions, mergers, loops, acute angles, short branches, unequal diameters and closely spaced junctions.
-- OCCT 7.9.3 now supplies the initial exact extrusion, sweep and junction implementation. Validate its suitability for the full solid/surface and STEP requirements; keep document state separate from kernel objects.
-- Constant-diameter branch solids with arc-length setbacks and free-end preservation.
-- Provisional blends for partially assigned junctions, rebuilt as a single valid joined region when all incident diameters are assigned. A set of intersecting tubes is not an acceptable substitute.
-- Editable round/fillet transitions, invalid-radius handling and last-valid-model preservation.
-- Face removal to an open surface shell while retaining the solid representation.
-- Solid, surface and centerline STEP export and reimport verification. Explicit STEP unit metadata policy must preserve the numeric coordinates users entered; the UI remains dimensionless.
-- Real COMSOL import and downstream surface-meshing checks.
+## Geometry and performance
 
-## General part modeling
+- Preserve exact centerline-guided bodies and supported rounded junctions while handling invalid or unsupported geometry explicitly.
+- Keep dependent centerlines, point sets, diameters, setbacks and visibility stable through edits and save/load.
+- Use asynchronous, coalesced geometry builds so repeated edits do not queue redundant work.
+- Verify build and interaction performance on large point sets and large swept geometries before publishing performance numbers.
+- Validate body connectivity, B-rep validity, seam normals and junction behavior across supported geometries.
 
-- Extruded, revolved and swept boss/base; Swept Blend; matching four cut operations.
-- Centerline-first sweep/blend with an automatically offered normal sketch plane.
-- Body mirror, linear/circular body patterns and reference planes/axes/points/coordinate systems.
-- Editable feature history, dependency regeneration, rollback and durable feature references.
-- See `design/command-interface-v2.md` for complete sketch primitives, dimensions, relations, editing, mirroring and pattern requirements. Select and validate a constraint solver; disabled toolbar commands must become real operations.
+Performance is under verification. No benchmark timing or maximum geometry size is a release claim until the large-geometry checks are complete.
 
-## Robustness and distribution
+## Interchange and distribution
 
-- Endpoint-to-segment connection review, import adapter for actual research data, ambiguous connection handling.
-- Large network and self-intersection diagnostics; adequate interactive performance.
-- Native document migration/backward-compatibility policy and crash recovery.
-- GUI interaction tests for sketching, modeling, undo/redo, save/load and all export targets.
-- Windows and macOS CI pass, install/uninstall tests, and early interactive test on a real Mac.
-- Choose source license, audit redistributed dependency notices, decide signing/notarization requirements.
-- Publish v1.0 installers through GitHub Releases only after these gates are satisfied.
+- STEP export and surface preparation remain pending.
+- Windows CI must produce one x64 installer EXE with runtime dependencies, uninstall support and shortcuts.
+- macOS CI must produce an Apple Silicon DragNDrop DMG with resources inside the app bundle. Intel macOS is not verified.
+- Release assets must include SHA256SUMS. Stable `vX.Y.Z` tags publish stable releases; development tags publish prereleases.
+- Configure and test macOS Developer ID signing and notarization with real credentials before a signed release; this pipeline is not implemented yet. Local development does not require credentials.
+- The macOS command-line helper must require an actual DMG URL and SHA-256 value, verify both the archive and architecture, and avoid overwriting an existing installation.
 
-## Current geometry limitation
+## Verification
 
-The viewport tessellates Open CASCADE solids. Branches use interpolated B-splines and arc-length setbacks. Provisional transitions sweep a varying radius along the exact centerline tails, with zero radius slope at their ends. Successful branch seams are checked against actual trimmed B-rep surface normals at eight azimuths per ring, with a maximum angle of 1e-4 radians. Separate curves with a tangent discontinuity cannot currently form a provisional transition. Fully assigned junction arms follow their exact guides into a central Boolean union, with optional intersection-edge fillets. B-rep validity and connected-solid checks gate successful junctions. These checks do not prove global clearance, global curvature continuity, physiological suitability or downstream meshing quality. The central multi-arm union still needs further smooth-surface construction work. Short setbacks and difficult angles can fail and are labeled explicitly. The software viewport uses per-pixel depth testing; fine tessellation and large-network rendering still need performance work. General edge fillets and STEP round trips are still unimplemented.
-
-## Display contract
-
-No persistent branch IDs, diameter labels, section rings or junction annotations in the default geometry viewport. Relevant highlights and editing handles are contextual. Optional overlays never become geometry. Centerline STEP export, when implemented, intentionally exports the selected curve geometry separately from solid/surface exports.
+- Automated tests cover point editing, centerline connections, mirrors, sweep bodies, supported junction rounding, persistence, viewport behavior and native UI smoke behavior.
+- Run `MVCAD --verify-bifurcation <output-directory>` only for the supported junction verification fixture; its local measurements do not establish general performance.
+- Complete a real Mac interactive test and clean Windows installer install/uninstall test before a public release.
+- Audit redistributed dependency notices and select the project source license before publication.

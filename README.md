@@ -1,35 +1,23 @@
 # MVCAD
 
-A standalone C++ / Qt 6 Widgets desktop application for creating dimensionless microvascular geometry. Windows/MSVC 2022 and macOS are the initial targets. The compact white workbench has Features, Sketch, Centerlines and Auto Sweep tabs.
+MVCAD is a focused C++ / Qt 6 Widgets desktop application for dimensionless microvascular geometry. Its workflow is point sets → editable centerlines → mirrored centerlines → automatic swept bodies. The current targets are Windows/MSVC 2022 and macOS Apple Silicon.
 
-**Status: 0.2.0 development preview, working toward v1.0.** Exact solid modeling now uses Open CASCADE 7.9.3. Unsupported commands remain disabled. This release is not yet ready for simulation interchange: STEP export and surface preparation are still pending.
+**Status: 0.4.0 development.** No 0.4.0 release has been published. Geometry builds use Open CASCADE 7.9.3, run asynchronously and coalesce queued edits. See the [local verification report](design/performance-verification-040.md) for measured workloads and their limits. STEP export and surface preparation are pending.
 
-## Available now
+## Available workflow
 
-- New parts show selectable Front, Top and Right reference planes and an origin.
-- Plane-based rectangle, circle and closed-polyline sketches, drawn with the mouse and edited with exact numeric profile dimensions.
-- Extruded Boss/Base and Extruded Cut with blind, reversed and mid-plane directions; cuts also support Through All. Preview, editable feature history, regeneration and undo/redo are included.
-- Settings: display precision defaults to **0.001**, with finer values down to **0.0001**. This controls mesh chord deviation; analytic circles and solid geometry remain exact.
-- CSV imports points only. Curve Through Points constructs an interpolated centerline from an ordered selection. Connections split the network into independently selectable branches.
-- Circular branch solids with independent junction-end setbacks (10% default), measured along centerline arc length. Free ends extend to their endpoints.
-- Unequal-diameter provisional transitions follow the exact centerline when two assigned branches form a tangent-continuous guide. Radius changes have zero slope at both ends; surface normals are checked around both seams. Fully assigned supported junctions are fused and checked as joined solids. Failed junctions are reported explicitly.
-- Round Junctions applies a radius to supported junction intersection edges; invalid rounding preserves the previous model.
-- Schema-2 `.mvcad` part files retain points, network parameters, sketches and extrusion history. Schema-1 files remain readable.
-- Clean geometry viewport, optional centerlines/labels, orbit, pan, zoom and fit.
+- Import CSV point sets or create point sets by entering Cartesian coordinates.
+- Build a curve through an ordered point selection, then edit its point references, coordinates, ordering, name and connection tolerance.
+- Create dependent mirrored centerlines from an existing straight two-point centerline axis. Editing the source or axis regenerates the mirror.
+- Assign branch diameters and setbacks in Auto Sweep. MVCAD creates exact swept bodies along the centerlines and joins supported junctions with rounded transitions.
+- Hide, show, or make bodies transparent. Visibility is saved and undoable.
+- Save native `.mvcad` parts with named point sets, centerline dependencies, visibility, diameters and setbacks. Default display precision is **0.001**; the finest setting is **0.0001**.
 
-## First solid
+Classic sketching, extrusion, cuts, revolve, manual sweep, general CAD fillets and related classic modeling commands have been removed from the user interface. MVCAD is centered on centerlines and automatic sweeps.
 
-1. New Part, select a reference plane in the tree or viewport, then Sketch → New Sketch.
-2. Draw a Rectangle or Circle with two clicks, or draw a Closed Polyline and press Enter. Escape cancels an unfinished drawing.
-3. Smart Dimension edits exact profile coordinates and dimensions. Exit Sketch returns to Features.
-4. Extruded Boss/Base builds the solid. Create another profile and choose Extruded Cut to remove material.
-5. Double-click a sketch or feature in the history to edit it. Save creates a native `.mvcad` part.
+## Point-first workflow
 
-Open `examples/extrusion-and-cut.mvcad` for a saved block with a through-hole. One closed profile per sketch is supported at this stage. These numeric profile dimensions are not a general geometric constraint solver. Nested profiles, general edge fillets, revolve, manual sweep/blend, mirrors, patterns, face removal and STEP export remain future work.
-
-## Point-first vessel workflow
-
-Import `examples/connected-points.csv`. Create a main centerline using P1, P2, P3, P4, P5, then a connecting vessel using P3, P6, P7. Reusing P3 splits the main centerline into two branches. Select each branch in Auto Sweep and assign its diameter. The unassigned third branch stays visible as a centerline; partial junction transitions are purple and marked provisional.
+Import `examples/connected-points.csv`, create a centerline through P1, P2, P3, P4, P5, then another through P3, P6, P7. Reusing P3 creates a branch. Select each branch in Auto Sweep and assign its diameter; an unassigned branch remains visible as a centerline until it is assigned.
 
 ```csv
 point_id,x,y,z
@@ -42,23 +30,23 @@ P6,6,-15,0
 P7,10,-30,0
 ```
 
-The header `x,y,z` is also accepted; IDs are then generated. Legacy `curve_id,x,y,z` files import as points, without automatically constructing their old curves. Import appends points; Curve Through Points provides explicit point ordering and a connection tolerance. Interior shared points and endpoints within tolerance of the actual interpolated centerline establish junctions, including when the main centerline is created later. Arbitrary spatial crossings do not connect. A projected connection inserts a shared interpolation point and regenerates the affected curve; its shape can change slightly. Imported source points remain separately preserved. Unchanged branches retain their diameter assignments when another curve is added; newly split branches require assignment.
+Interior shared points and endpoints within the connection tolerance establish junctions. Arbitrary spatial crossings do not connect. A projected connection inserts a shared interpolation point and regenerates the affected curve; imported source points remain preserved. Supported coplanar symmetric three-arm junctions use guided arms, one Boolean union, intersection-edge rounding, seam-normal checks and trimmed-surface symmetry validation. Unsupported or invalid junctions fail explicitly and leave the individual branch bodies visible.
 
-Open `examples/centerline-guided-blend.mvcad` for the curved 8-to-6 provisional transition, or `examples/rounded-junction.mvcad` for a joined Y-junction with a 0.1 round and 30% setbacks. A partial transition across separate centerlines with a tangent discontinuity is rejected. Fully assigned junctions use guided arms meeting a central Boolean union; Round Junctions smooths supported intersection edges. Tangency is checked at the branch seams, but global smoothness of the central union is not guaranteed. Junction feasibility depends on curvature, angles, radii and available setback. Increase setbacks when a junction reports insufficient room. A failed junction leaves individual branch solids visible and is never marked complete. Round Junctions currently uses one radius for all fully assigned junctions. Fine tessellation can take several seconds and large-network performance remains under development.
+`examples/centerline-guided-blend.mvcad` demonstrates a curved 8-to-6 transition. `examples/symmetric-bifurcation.mvcad` demonstrates a mirrored bifurcation. These examples exercise supported centerline geometry; they are not general CAD templates.
 
-Dimensions have no unit suffix. Source numeric values are retained in the part file. CSV limits are 16 MB / 50,000 points; native files are limited to 32 MB.
+## Native files and compatibility
+
+Centerline-based native parts remain compatible with the current schema and retain point sets, centerline dependencies, body visibility, diameters and setbacks. Legacy classic CAD parts that depend on removed sketch, extrusion, cut, revolve or manual-sweep features are rejected when opened; MVCAD does not rewrite or delete those files. Keep the original file if it must be opened by an older build.
 
 ## Build
 
-Requires CMake 3.24+, Ninja, a C++20 compiler, Qt 6.8.3 (Core/Gui/Widgets/Test), and Open CASCADE 7.9.3. Build the pinned minimal shared kernel first in an MSVC developer shell or an Xcode command-line-tools environment:
+Requires CMake 3.24+, Ninja, a C++20 compiler, Qt 6.8.3 (Core/Gui/Widgets/Concurrent/Test), and Open CASCADE 7.9.3. Build the pinned shared kernel first in an MSVC developer shell or an Xcode command-line-tools environment:
 
 ```sh
 python scripts/bootstrap-occt.py --jobs 4
 ```
 
-The script verifies the upstream source commit and installs the kernel under `.tools/occt`. CMake discovers this prefix automatically. Qt can be supplied through `CMAKE_PREFIX_PATH`.
-
-On Windows with Visual Studio 2022 C++ Build Tools:
+On Windows:
 
 ```powershell
 ./scripts/build-windows.ps1 -Preset release -Launch
@@ -75,16 +63,20 @@ ctest --preset release
 open build/release/MVCAD.app
 ```
 
-Automated checks cover analytic extrusion/cut volumes, invalid operations, vessel solids, curved-guide transitions and seam tangency, junction fillets, point connections, persistence, viewport depth/lighting and a native UI smoke workflow. A real Mac interactive test remains required before v1.0.
-
 ## Development packages
 
-[GitHub Releases](https://github.com/Mithun-1/MVCAD/releases) distributes Windows x64 installers/portable ZIPs and macOS Apple Silicon disk images. Packages are unsigned development builds.
+[GitHub Releases](https://github.com/Mithun-1/MVCAD/releases) will publish one Windows x64 installer EXE and a macOS Apple Silicon DMG. The DMG is intended to be opened and dragged to Applications; bundled runtime resources belong inside the app bundle. Packages are currently unsigned development builds. Intel macOS is not verified.
 
-For the Windows ZIP, extract everything, install `bin/vc_redist.x64.exe` if needed, and run `bin/MVCAD.exe`. Keep adjacent libraries/plugins with the executable. The installer includes the runtime. On macOS, copy MVCAD.app from the disk image to Applications.
+For command-line macOS installation, use the helper with the actual release URL and checksum supplied by the release page. The release workflow will attach `install-macos.sh` and print the complete one-line command; no 0.4.0 assets have been published yet:
 
-See [release gates](docs/ROADMAP.md), [interface specification](design/command-interface-v2.md), and [third-party notices](docs/THIRD_PARTY.md).
+```sh
+curl --fail --location --proto '=https' URL_OF_INSTALL_MACOS_SH | bash -s -- --url URL_OF_MVCAD_DMG --sha256 SHA256_FROM_SHA256SUMS
+```
+
+The helper checks that it is running on macOS, verifies SHA-256 and application architecture, and refuses to overwrite an existing MVCAD.app. Replace the placeholder values with real release values; this repository does not invent live download URLs.
+
+See [release gates](docs/ROADMAP.md) and [third-party notices](docs/THIRD_PARTY.md).
 
 ## Repository policy
 
-Public source repository; no project source license has been selected yet. Publication does not grant an additional source license. Local build tools and user research reference imagery are excluded from Git. Generated design targets are in `design/`.
+Public source repository; no project source license has been selected yet. Publication does not grant an additional source license. Local build tools and user research reference imagery are excluded from Git.

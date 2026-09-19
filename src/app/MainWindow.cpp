@@ -1,10 +1,19 @@
 #include "MainWindow.h"
 #include "Viewport.h"
+#include "core/DocumentEditing.h"
+#include "CadIcons.h"
+#include <QFrame>
+#include <QLineEdit>
+#include <QMenu>
 #include "core/PartIO.h"
 #include <QAction>
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QThread>
+#include <QTimer>
 #include <QSettings>
 #include <QSet>
+#include <QMap>
 #include <algorithm>
 #include <QTemporaryDir>
 #include <QCloseEvent>
@@ -62,23 +71,32 @@ MainWindow::MainWindow() {
     auto* split=new QSplitter;split->setObjectName("workspaceSplitter");split->setChildrenCollapsible(false);
     layout->addWidget(split,1);
     createSidebar();
-    auto* side=parameters_->parentWidget();split->addWidget(side);split->addWidget(viewport_);split->setSizes({270,1170});split->setStretchFactor(1,1);
+    auto* side=parameters_->parentWidget();split->addWidget(side);
+    auto* geometryPanel=new QWidget;auto* geometryLayout=new QVBoxLayout(geometryPanel);geometryLayout->setContentsMargins(0,0,0,0);geometryLayout->setSpacing(0);
+    auto* displayTools=new QToolBar;displayTools->setIconSize({16,16});displayTools->setStyleSheet("QToolBar{background:#fff;border-bottom:1px solid #e1e4e7;spacing:2px;padding:1px;}");
+    displayTools->addAction(cadIcon("body"),"Isometric",viewport_,&Viewport::isometricView);displayTools->addAction(cadIcon("plane"),"Front",viewport_,&Viewport::frontView);displayTools->addAction(cadIcon("eye"),"Fit all",viewport_,&Viewport::fitAll);displayTools->addSeparator();
+    displayTools->addAction(cadIcon("eye"),"Show all geometry",this,&MainWindow::showAllGeometry);
+    geometryLayout->addWidget(displayTools);geometryLayout->addWidget(viewport_,1);split->addWidget(geometryPanel);split->setSizes({270,1170});split->setStretchFactor(1,1);
+    connect(viewport_,&Viewport::bodySelected,this,&MainWindow::selectBody);
     connect(viewport_,&Viewport::branchSelected,this,&MainWindow::selectBranch);
-    connect(viewport_,&Viewport::planeSelected,this,&MainWindow::selectPlane);
     connect(viewport_,&Viewport::pointSelected,this,&MainWindow::selectPoint);
-    connect(viewport_,&Viewport::sketchDrawn,this,&MainWindow::acceptSketch);
+    builds_=new GeometryBuildQueue(this);
+    builds_->completed=[this](const GeometryBuildQueue::Result& result){
+        geometry_=result.geometry;buildError_=result.error;lastBuildMs_=result.milliseconds;
+        refreshTree();viewport_->setDocument(document_,geometry_,precision_,fitWhenReady_);fitWhenReady_=false;
+    };
     connect(undo_,&QUndoStack::cleanChanged,this,[this]{updateTitle();});
     summary_=new QLabel;statusBar()->addWidget(summary_);statusBar()->addPermanentWidget(new QLabel("Development preview  |  Dimensionless"));
     setStyleSheet(R"(
         QMainWindow, QMenuBar, QStatusBar {background:#f7f9fc;color:#26354a;}
         QToolBar {background:#f8fafc;border:0px;spacing:6px;padding:3px;}
-        QToolButton {padding:5px 8px;border:1px solid transparent;border-radius:2px;color:#243247;}
+        QToolButton {padding:3px 5px;border:1px solid transparent;border-radius:2px;color:#243247;}
         QToolButton:hover {background:#e4effb;border-color:#b9d5f0;}
         QToolButton:disabled {color:#9ca7b3;}
-        QTabBar::tab {background:#f0f3f7;border:1px solid #dae1e9;padding:4px 17px;min-height:16px;}
+        QTabBar::tab {background:#f0f3f7;border:1px solid #dae1e9;padding:2px 12px;min-height:16px;}
         QTabBar::tab:selected {background:#fff;color:#1268b8;border-bottom:2px solid #1684d5;}
         QTreeWidget {background:white;border:0px;color:#253246;}
-        QTreeWidget::item {height:23px;}
+        QTreeWidget::item {height:21px;}
         QTreeWidget::item:selected {background:#dceefe;color:#174a79;}
         QGroupBox {border:0px;border-top:1px solid #dbe3ec;margin-top:14px;padding-top:12px;font-weight:600;}
         QGroupBox::title {subcontrol-origin:margin;left:8px;}
@@ -93,6 +111,7 @@ MainWindow::MainWindow() {
     )");
     rebuild(true);
 }
+MainWindow::~MainWindow(){delete builds_;builds_=nullptr;}
 void MainWindow::createCommands() {
     auto* file=menuBar()->addMenu("&File");
     file->addAction("&New Part",QKeySequence::New,this,&MainWindow::newPart);
@@ -105,20 +124,19 @@ void MainWindow::createCommands() {
     file->addSeparator();file->addAction("Exit",QKeySequence::Quit,this,&QWidget::close);
     auto* edit=menuBar()->addMenu("&Edit");
     edit->addAction("Settings…",this,&MainWindow::settings);
-    edit->addAction("Edit Selected Feature…",this,&MainWindow::editFeature);
-    edit->addAction("Remove Last Feature",this,&MainWindow::deleteLastFeature);
+    edit->addAction("Edit Centerline…",this,&MainWindow::editCenterline);
     auto* undo=undo_->createUndoAction(this,"Undo");undo->setShortcut(QKeySequence::Undo);edit->addAction(undo);
     auto* redo=undo_->createRedoAction(this,"Redo");redo->setShortcut(QKeySequence::Redo);edit->addAction(redo);
     auto* view=menuBar()->addMenu("&View");
     view->addAction("Fit All",QKeySequence("F"),viewport_,&Viewport::fitAll);
     view->addAction("Front",viewport_,&Viewport::frontView);view->addAction("Isometric",viewport_,&Viewport::isometricView);
-    auto* planes=view->addAction("Show reference planes");planes->setCheckable(true);planes->setChecked(true);connect(planes,&QAction::toggled,viewport_,&Viewport::setPlanesVisible);connect(viewport_,&Viewport::planesVisibilityChanged,planes,&QAction::setChecked);
     auto* labels=view->addAction("Show branch labels");labels->setCheckable(true);connect(labels,&QAction::toggled,viewport_,&Viewport::setLabels);
     auto* centerlines=view->addAction("Show centerlines through sweeps");centerlines->setCheckable(true);connect(centerlines,&QAction::toggled,viewport_,&Viewport::setCenterlines);connect(viewport_,&Viewport::centerlinesVisibilityChanged,centerlines,&QAction::setChecked);
-    auto* clear=view->addAction("Clear selection");clear->setShortcut(Qt::Key_Escape);connect(clear,&QAction::triggered,this,[this]{if(sketchMode_)viewport_->cancelDrawing();else selectBranch(-1);});
+    auto* clear=view->addAction("Clear selection");clear->setShortcut(Qt::Key_Escape);connect(clear,&QAction::triggered,this,[this]{selectBranch(-1);selectedBody_.clear();viewport_->clearGeometrySelection();statusBar()->clearMessage();});
     auto* help=menuBar()->addMenu("&Help");
     help->addAction("Development roadmap",this,[]{QDesktopServices::openUrl(QUrl("https://github.com/Mithun-1/MVCAD/blob/main/docs/ROADMAP.md"));});
-    help->addAction("About MVCAD",this,[this]{QMessageBox::about(this,"MVCAD",QString("MVCAD %1\nNative microvascular geometry editor\n\nReference-plane sketches, exact extrusion/cuts, point-based centerlines, branch solids and supported junction blends/rounding use Open CASCADE 7.9.3. General sketch constraints, surface preparation and STEP export remain under development.").arg(MVCAD_VERSION));});
+    help->addAction("About MVCAD",this,[this]{QMessageBox::about(this,"MVCAD",QString("MVCAD %1\nNative microvascular geometry editor\n\nPoint sets, editable centerlines and automatic vessel sweeps. Exact branch solids and supported junction blends use Open CASCADE 7.9.3. Surface preparation and STEP export remain under development.").arg(MVCAD_VERSION));});
+    undo->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));redo->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
     auto* quick=addToolBar("File");quick->setMovable(false);quick->setIconSize(QSize(17,17));
     quick->addAction(style()->standardIcon(QStyle::SP_FileIcon),"New",this,&MainWindow::newPart);
     quick->addAction(style()->standardIcon(QStyle::SP_DirOpenIcon),"Open",this,&MainWindow::openDialog);
@@ -126,7 +144,7 @@ void MainWindow::createCommands() {
     quick->addSeparator();quick->addAction(undo);quick->addAction(redo);
     auto* space=new QWidget;space->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);quick->addWidget(space);
     quick->addWidget(new QLabel("MVCAD  "));quick->addAction(exportAction);
-    commands_=new QStackedWidget;commands_->setFixedHeight(72);
+    commands_=new QStackedWidget;commands_->setFixedHeight(82);
     tabs_=new QTabBar;tabs_->setExpanding(false);tabs_->setDrawBase(false);
     auto* layout=qobject_cast<QVBoxLayout*>(centralWidget()->layout());layout->addWidget(commands_);layout->addWidget(tabs_);
     struct Command{QString text;std::function<void()> callback;};
@@ -135,7 +153,8 @@ void MainWindow::createCommands() {
         area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         auto* content=new QWidget;auto* h=new QHBoxLayout(content);h->setContentsMargins(8,3,8,3);h->setSpacing(3);
         for(auto& c:list){
-            auto* button=new QToolButton;button->setText(c.text);button->setMinimumHeight(49);button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            if(c.text=="|"){auto* separator=new QFrame;separator->setFrameShape(QFrame::VLine);separator->setStyleSheet("color:#d1d5d9");h->addWidget(separator);continue;}
+            auto* button=new QToolButton;button->setText(c.text);button->setFixedSize(82,66);button->setIconSize({23,23});button->setIcon(cadIcon(c.text.toLower()));button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);button->setToolTip(c.text.simplified());
             QFont f=font();f.setPointSize(9);button->setFont(f);
             if(c.callback)connect(button,&QToolButton::clicked,this,c.callback);
             else{button->setEnabled(false);button->setToolTip("Planned for v1.0. Not implemented in this development build.");}
@@ -143,27 +162,29 @@ void MainWindow::createCommands() {
         }
         h->addStretch();content->setMinimumWidth(content->sizeHint().width());area->setWidget(content);commands_->addWidget(area);tabs_->addTab(name);
     };
-    page("Features",{{"Extruded\nBoss/Base",[this]{extrude(false);}},{"Revolved\nBoss/Base",{}},{"Swept\nBoss/Base",{}},{"Swept\nBlend",{}},
-        {"Extruded\nCut",[this]{extrude(true);}},{"Revolved\nCut",{}},{"Swept\nCut",{}},{"Swept Blend\nCut",{}},{"Round /\nFillet",{}},{"Remove\nFace",{}},
-        {"Mirror\nBodies",{}},{"Linear\nPattern",{}},{"Circular\nPattern",{}},{"Reference\nGeometry",{}}});
-    page("Sketch",{{"New\nSketch",[this]{newSketch();}},{"Edit\nSketch",[this]{editSketch();}},{"Exit\nSketch",[this]{exitSketch();}},
-        {"Smart\nDimension",[this]{dimensionSketch();}},{"Rectangle",[this]{drawSketch(mvcad::ProfileType::Rectangle);}},{"Circle",[this]{drawSketch(mvcad::ProfileType::Circle);}},
-        {"Closed\nPolyline",[this]{drawSketch(mvcad::ProfileType::Polyline);}},{"Mirror\nEntities",{}},{"Sketch\nPattern",{}},{"Add\nRelation",{}}});
-    page("Centerlines",{{"Import\nPoints",[this]{importCsv();}},{"Curve Through\nPoints",[this]{curveThroughPoints();}},{"Open\nExample",[this]{openExample();}},{"Fit\nAll",[this]{viewport_->fitAll();}},
-        {"Isometric\nView",[this]{viewport_->isometricView();}},{"Front\nView",[this]{viewport_->frontView();}},{"Edit\nSpline",{}}});
+    page("Points",{{"Import\nPoint Sets",[this]{importCsv();}},{"New Point\nSet",[this]{newPointSet();}},{"Edit\nPoints",[this]{datumPoints();}},{"|",{}},{"Hide",[this]{entityVisibility(true);}},{"Show",[this]{entityVisibility(false);}},{"Show All",[this]{showAllGeometry();}}});
+    page("Centerlines",{{"Curve Through\nPoints",[this]{curveThroughPoints();}},{"Edit\nCenterline",[this]{editCenterline();}},{"Mirror\nCenterline",[this]{mirrorCurve();}},{"|",{}},{"Hide",[this]{entityVisibility(true);}},{"Show",[this]{entityVisibility(false);}},{"Dependencies",[this]{showDependencies();}}});
     page("Auto Sweep",{{"Assign\nDiameter",[this]{if(selected_>=0){diameter_->setFocus();diameter_->selectAll();}else statusBar()->showMessage("Select a branch in the viewport or tree.",5000);}},
-        {"Clear\nDiameter",[this]{if(selected_>=0){try{auto n=document_.network;n.branches[selected_].diameter=0;commit(n,"Clear diameter");}catch(const std::exception& e){QMessageBox::warning(this,"Diameter unchanged",e.what());}}}},
-        {"Fit\nAll",[this]{viewport_->fitAll();}},{"Rebuild\nJunctions",[this]{rebuild();}},{"Round\nJunctions",[this]{roundJunctions();}}});
+        {"Assign All\nUnassigned",[this]{assignAllDiameters();}},
+        {"Clear\nDiameter",[this]{if(selected_>=0){auto n=document_.network;n.branches[selected_].diameter=0;commit(n,"Clear diameter");}}},
+        {"Round\nJunctions",[this]{roundJunctions();}},{"|",{}},{"Hide\nBodies",[this]{selectedBody_="vessels";bodyVisibility(true);}},{"Show\nBodies",[this]{showAllBodies();}},{"Transparent",[this]{selectedBody_="vessels";bodyTransparency();}}});
     connect(tabs_,&QTabBar::currentChanged,commands_,&QStackedWidget::setCurrentIndex);
     tabs_->setCurrentIndex(0);
 }
 void MainWindow::createSidebar() {
     auto* side=new QWidget;side->setObjectName("sidebar");side->setMinimumWidth(235);side->setMaximumWidth(460);side->setStyleSheet("QWidget#sidebar {background:#f8fafc;}");
     auto* v=new QVBoxLayout(side);v->setContentsMargins(9,8,9,8);v->setSpacing(8);
-    auto* title=new QLabel("Feature History");QFont f=font();f.setWeight(QFont::DemiBold);title->setFont(f);v->addWidget(title);
+    auto* title=new QLabel("Network History");QFont f=font();f.setWeight(QFont::DemiBold);title->setFont(f);v->addWidget(title);
+    auto* filter=new QLineEdit;filter->setObjectName("featureTreeFilter");filter->setPlaceholderText("Filter network");filter->setClearButtonEnabled(true);v->addWidget(filter);
     tree_=new QTreeWidget;tree_->setHeaderHidden(true);tree_->setIndentation(17);tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);v->addWidget(tree_,1);
+    tree_->setIconSize({16,16});tree_->setContextMenuPolicy(Qt::CustomContextMenu);connect(tree_,&QWidget::customContextMenuRequested,this,&MainWindow::bodyMenu);
+    connect(filter,&QLineEdit::textChanged,this,&MainWindow::filterTree);
+    connect(tree_,&QTreeWidget::itemChanged,this,[this](QTreeWidgetItem* item,int){if(rebuilding_)return;
+        if(item->data(0,Qt::UserRole+6).isValid()){selectedBody_=item->data(0,Qt::UserRole+6).toString();bodyVisibility(item->checkState(0)!=Qt::Checked);}
+        else{tree_->setCurrentItem(item);entityVisibility(item->checkState(0)!=Qt::Checked);}});
     connect(tree_,&QTreeWidget::itemSelectionChanged,this,&MainWindow::handleTreeSelection);
-    connect(tree_,&QTreeWidget::itemDoubleClicked,this,[this](QTreeWidgetItem*,int){if(selectedSketch_>=0)editSketch();else if(selectedFeature_>=0)editFeature();});
+    connect(tree_,&QTreeWidget::itemDoubleClicked,this,[this](QTreeWidgetItem*,int){if(selectedCurve_>=0)editCenterline();else if(!selectedPoints_.empty())datumPoints();});
+    connect(tree_,&QTreeWidget::itemExpanded,this,&MainWindow::populateTreeItem);
     parameters_=new QGroupBox("Auto Sweep",side);auto* form=new QFormLayout(parameters_);form->setContentsMargins(3,16,3,3);
     selection_=new QLabel("Select a branch");form->addRow(selection_);
     diameter_=new QDoubleSpinBox;diameter_->setObjectName("diameterInput");diameter_->setDecimals(9);diameter_->setRange(.000000001,1e9);diameter_->setValue(6);diameter_->setSingleStep(.5);
@@ -173,42 +194,69 @@ void MainWindow::createSidebar() {
     auto* hint=new QLabel("Junction ends only.\nFree endpoints extend fully.");hint->setStyleSheet("color:#67788b;font-size:11px;");form->addRow(hint);
     apply_=new QPushButton("Apply Diameter");apply_->setObjectName("applyDiameter");connect(apply_,&QPushButton::clicked,this,&MainWindow::applyDiameter);form->addRow(apply_);v->addWidget(parameters_);
     auto* group=new QGroupBox("Junctions");auto* j=new QVBoxLayout(group);junctions_=new QLabel("No junctions");junctions_->setWordWrap(true);junctions_->setTextFormat(Qt::PlainText);j->addWidget(junctions_);v->addWidget(group);
-    auto* note=new QLabel("Select a plane, then New Sketch.");note->setObjectName("modelingNotice");note->setWordWrap(true);note->setStyleSheet("color:#7b6340;font-size:11px;padding:5px 0;");v->addWidget(note);
+    buildStatus_=new QLabel;buildStatus_->setWordWrap(true);buildStatus_->setObjectName("geometryBuildStatus");v->addWidget(buildStatus_);
+    auto* note=new QLabel("Import or create point sets to begin.");note->setObjectName("modelingNotice");note->setWordWrap(true);note->setStyleSheet("color:#7b6340;font-size:11px;padding:5px 0;");v->addWidget(note);
 }
-void MainWindow::rebuild(bool fit) {
-    const auto cad=mvcad::buildCad(document_.cad,precision_);
-    const auto vessels=mvcad::buildVessels(document_.network,precision_,document_.junctionRadius);
-    rebuilding_=true;QSignalBlocker blocker(tree_);tree_->clear();
-    auto* root=new QTreeWidgetItem(tree_,{path_.isEmpty()?"Untitled Part":QFileInfo(path_).completeBaseName()});root->setExpanded(true);
-    for(int i=0;i<3;++i){auto* item=new QTreeWidgetItem(root,{QStringList{"Front Plane","Top Plane","Right Plane"}[i]});item->setData(0,Qt::UserRole+1,i);}
-    new QTreeWidgetItem(root,{"Origin"});
-    auto* cloud=new QTreeWidgetItem(root,{QString("Imported points (%1)").arg(document_.points.size())});
-    for(int i=0;i<int(document_.points.size());++i){auto* item=new QTreeWidgetItem(cloud,{document_.points[i].id});item->setData(0,Qt::UserRole+2,i);}
-    auto* history=new QTreeWidgetItem(root,{"Sketches and Features"});history->setExpanded(true);
-    QSet<int> consumed;
-    auto addSketch=[&](QTreeWidgetItem* parent,int index){const auto& sketch=document_.cad.sketches[index];auto* item=new QTreeWidgetItem(parent,{sketch.id+" ("+QStringList{"Front","Top","Right"}[int(sketch.plane)]+")"});item->setData(0,Qt::UserRole+3,index);};
-    for(int i=0;i<int(document_.cad.features.size());++i){const auto& feature=document_.cad.features[i];auto* item=new QTreeWidgetItem(history,{feature.id});item->setData(0,Qt::UserRole+4,i);addSketch(item,feature.sketch);consumed.insert(feature.sketch);}
-    for(int i=0;i<int(document_.cad.sketches.size());++i)if(!consumed.contains(i))addSketch(history,i);
-    auto* points=new QTreeWidgetItem(root,{QString("Centerlines (%1)").arg(document_.network.curves.size())});
-    for(const auto& c:document_.network.curves)new QTreeWidgetItem(points,{c.id});
-    auto* branches=new QTreeWidgetItem(root,{QString("Branches (%1)").arg(document_.network.branches.size())});branches->setExpanded(true);
-    for(int i=0;i<static_cast<int>(document_.network.branches.size());++i){
-        const auto& b=document_.network.branches[i];
-        auto* item=new QTreeWidgetItem(branches,{b.diameter>0?QString("%1   Ø%2").arg(b.id).arg(b.diameter,0,'g',10):b.id+"   Unassigned"});
-        item->setData(0,Qt::UserRole,i);if(i==selected_)tree_->setCurrentItem(item);
+void MainWindow::filterTree(const QString& text) {
+    std::function<bool(QTreeWidgetItem*)> show=[&](auto* item){
+        bool matches=item->text(0).contains(text,Qt::CaseInsensitive);
+        for(int i=0;i<item->childCount();++i)matches=show(item->child(i))||matches;
+        item->setHidden(!matches);if(!text.isEmpty()&&matches)item->setExpanded(true);return matches;
+    };
+    for(int i=0;i<tree_->topLevelItemCount();++i)show(tree_->topLevelItem(i));
+}
+void MainWindow::rebuild(bool fit,bool geometryChanged){
+    if(geometryChanged){geometry_.reset();buildError_.clear();fitWhenReady_=fitWhenReady_||fit;builds_->request(document_.network,precision_,document_.junctionRadius);}
+    refreshTree();viewport_->setDocument(document_,geometry_,precision_,fit);
+}
+bool MainWindow::waitForBuild(int timeoutMs){
+    QElapsedTimer timer;timer.start();while(builds_->busy()&&timer.elapsed()<timeoutMs){QApplication::processEvents(QEventLoop::AllEvents,20);QThread::msleep(1);}
+    return !builds_->busy()&&buildError_.isEmpty()&&bool(geometry_);
+}
+void MainWindow::populateTreeItem(QTreeWidgetItem* parent){
+    if(parent->childCount())return;QSignalBlocker blocker(tree_);
+    auto pointItem=[&](int index){const auto& p=document_.points[index];auto* item=new QTreeWidgetItem(parent,{p.id});item->setIcon(0,cadIcon("point"));item->setData(0,Qt::UserRole+2,index);item->setCheckState(0,p.hidden?Qt::Unchecked:Qt::Checked);item->setToolTip(0,QString("X %1 · Y %2 · Z %3").arg(p.position.x).arg(p.position.y).arg(p.position.z));};
+    if(parent->data(0,Qt::UserRole+8).isValid()){for(int index:pointGroups_.value(parent->data(0,Qt::UserRole+8).toString()))pointItem(index);}
+    else if(parent->data(0,Qt::UserRole+5).isValid()){
+        const auto id=document_.network.curves[parent->data(0,Qt::UserRole+5).toInt()].id;
+        for(const auto& definition:document_.curveDefinitions)if(definition.id==id){
+            if(!definition.mirrorSource.isEmpty()){new QTreeWidgetItem(parent,{"Source: "+definition.mirrorSource});new QTreeWidgetItem(parent,{"Axis: "+definition.mirrorAxis});}
+            for(const auto& point:definition.pointIds)if(pointIndices_.contains(point))pointItem(pointIndices_[point]);break;
+        }
     }
-    auto states=mvcad::junctionStates(document_.network);QStringList lines,details;
-    for(const auto& state:states){QString status="incomplete";for(const auto& result:vessels.junctions)if(result.index==state.node){status=result.state==mvcad::VesselBuildState::Built?"joined":result.state==mvcad::VesselBuildState::Failed?"FAILED":state.assigned<2?"incomplete":"provisional";details<<QString("J%1: %2").arg(lines.size()+1).arg(result.message);}lines<<QString("J%1: %2/%3 diameters · %4").arg(lines.size()+1).arg(state.assigned).arg(state.incident).arg(status);}
-    junctions_->setText(lines.isEmpty()?"No junctions":lines.join('\n'));
-    junctions_->setToolTip(details.join('\n'));
-    const bool hasNetwork=!document_.network.branches.empty();parameters_->setVisible(hasNetwork);junctions_->parentWidget()->setVisible(hasNetwork);
-    findChild<QLabel*>("modelingNotice")->setText(hasNetwork?"Purple: provisional transition. Hover Junctions for build details. STEP export remains under development.":!document_.points.empty()?"Select imported points, then Curve Through Points to construct a centerline.":document_.cad.features.empty()?"Select a reference plane, then New Sketch. Draw a closed profile and choose Extruded Boss/Base.":"Exact CAD solid. Double-click a sketch or feature to edit and regenerate.");
-    viewport_->setDocument(document_,cad,precision_,fit,&vessels);rebuilding_=false;selectBranch(selected_);
-    if(summary_)summary_->setText(QString("%1 solid features · %2 branches  |  Drag to orbit · Wheel to zoom").arg(document_.cad.features.size()).arg(document_.network.branches.size()));
-    updateTitle();
 }
+void MainWindow::refreshTree(){
+    rebuilding_=true;QSignalBlocker blocker(tree_);QSet<QString> expanded;
+    for(QTreeWidgetItemIterator it(tree_);*it;++it)if((*it)->isExpanded())expanded.insert((*it)->text(0));
+    tree_->clear();pointGroups_.clear();pointIndices_.clear();
+    for(int i=0;i<int(document_.points.size());++i){pointGroups_[document_.points[i].setId].push_back(i);pointIndices_[document_.points[i].id]=i;}
+    auto* root=new QTreeWidgetItem(tree_,{path_.isEmpty()?"Untitled Part":QFileInfo(path_).completeBaseName()});root->setExpanded(true);root->setIcon(0,cadIcon("body"));
+    auto item=[&](QTreeWidgetItem* parent,const QString& text,const QString& icon){auto* result=new QTreeWidgetItem(parent,{text});result->setIcon(0,cadIcon(icon));return result;};
+    auto* bodies=item(root,"Vessel Bodies","folder");bodies->setExpanded(true);
+    if(geometry_&&geometry_->nativeShape){auto* body=item(bodies,"Vessel network","body");body->setData(0,Qt::UserRole+6,"vessels");bool hidden=false;for(const auto& state:document_.bodyDisplay)if(state.bodyId=="vessels")hidden=state.hidden;body->setCheckState(0,hidden?Qt::Unchecked:Qt::Checked);}
+    auto* cloud=item(root,QString("Points (%1)").arg(document_.points.size()),"folder");
+    for(const auto& set:document_.pointSets){auto* child=item(cloud,QString("%1 (%2)").arg(set.id).arg(pointGroups_.value(set.id).size()),"folder");child->setData(0,Qt::UserRole+7,set.id);child->setData(0,Qt::UserRole+8,set.id);child->setCheckState(0,set.hidden?Qt::Unchecked:Qt::Checked);child->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);}
+    if(pointGroups_.contains("")){auto* loose=item(cloud,QString("Ungrouped (%1)").arg(pointGroups_.value("").size()),"folder");loose->setData(0,Qt::UserRole+8,QString{});loose->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);}
+    auto* curves=item(root,QString("Centerlines (%1)").arg(document_.network.curves.size()),"folder");
+    for(int i=0;i<int(document_.network.curves.size());++i){const auto& curve=document_.network.curves[i];auto* child=item(curves,curve.id,"curve");child->setData(0,Qt::UserRole+5,i);child->setCheckState(0,std::find(document_.hiddenCurves.begin(),document_.hiddenCurves.end(),curve.id)==document_.hiddenCurves.end()?Qt::Checked:Qt::Unchecked);child->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);}
+    auto* branches=item(root,QString("Branches (%1)").arg(document_.network.branches.size()),"folder");branches->setExpanded(document_.network.branches.size()<100);
+    for(int i=0;i<int(document_.network.branches.size());++i){const auto& b=document_.network.branches[i];auto* child=item(branches,b.id+(b.diameter>0?QString("   Ø%1").arg(b.diameter,0,'g',10):"   Unassigned"),"sweep");child->setData(0,Qt::UserRole,i);if(geometry_&&i<int(geometry_->branches.size()))child->setToolTip(0,geometry_->branches[i].message);}
+    for(QTreeWidgetItemIterator it(tree_);*it;++it)if(expanded.contains((*it)->text(0))){populateTreeItem(*it);(*it)->setExpanded(true);}
+    int built=0,partial=0,failed=0;QStringList details;
+    if(geometry_)for(const auto& j:geometry_->junctions){if(j.state==mvcad::VesselBuildState::Built)++built;else if(j.state==mvcad::VesselBuildState::Failed)++failed;else ++partial;if(details.size()<20)details<<QString("J%1: %2").arg(j.index+1).arg(j.message);}
+    junctions_->setText(geometry_?QString("%1 joined · %2 provisional · %3 failed").arg(built).arg(partial).arg(failed):"Waiting for geometry");junctions_->setToolTip(details.join('\n'));
+    buildStatus_->setText(!buildError_.isEmpty()?"Build failed: "+buildError_:!geometry_?"Building bodies… You can keep editing.":QString("Bodies ready · %1 ms").arg(lastBuildMs_,0,'f',0));
+    parameters_->setVisible(!document_.network.branches.empty());junctions_->parentWidget()->setVisible(!document_.network.branches.empty());
+    findChild<QLabel*>("modelingNotice")->setText(document_.network.branches.empty()?"Import or create point sets, then create a curve through the points.":"Select a branch and assign its diameter. Purple junctions are provisional; failed junctions remain separate branch solids.");
+    rebuilding_=false;if(selected_>=int(document_.network.branches.size()))selected_=-1;
+    if(!selectedBody_.isEmpty())selectBody(selectedBody_);else selectBranch(selected_);
+    filterTree(findChild<QLineEdit*>("featureTreeFilter")->text());
+    if(summary_)summary_->setText(QString("%1 points · %2 centerlines · %3 branches").arg(document_.points.size()).arg(document_.network.curves.size()).arg(document_.network.branches.size()));updateTitle();
+}
+
 void MainWindow::selectBranch(int i) {
     if(i<0||i>=static_cast<int>(document_.network.branches.size()))i=-1;
+    if(i>=0){selectedBody_.clear();viewport_->clearGeometrySelection();}
     selected_=i;viewport_->setSelected(i);parameters_->setEnabled(i>=0);
     if(i<0){selection_->setText("Select a branch");QSignalBlocker block(tree_);tree_->clearSelection();return;}
     const auto& b=document_.network.branches[i];selection_->setText(b.id+(b.diameter>0?" · Circular sweep":" · Unassigned"));
@@ -222,14 +270,23 @@ void MainWindow::applyDiameter() {
     try{auto n=document_.network;mvcad::setBranchParameters(n,selected_,diameter_->value(),start_->value()/100,end_->value()/100);commit(n,"Assign diameter "+n.branches[selected_].id);}
     catch(const std::exception& e){QMessageBox::warning(this,"Invalid sweep parameters",e.what());}
 }
-void MainWindow::commit(const mvcad::Network& n,const QString& text){auto d=document_;d.network=n;commit(d,text);}
+void MainWindow::commit(const mvcad::Network& n,const QString& text){
+    // Only network parameters changed; the point/definition data is already
+    // validated. Do not serialize tens of thousands of unchanged points.
+    (void)mvcad::serializePart(n);auto d=document_;d.network=n;
+    undo_->push(new Change(document_,std::move(d),[this](const auto& state){restore(state);},text));
+}
 void MainWindow::commit(const mvcad::Document& d,const QString& text){
-    const auto vessels=mvcad::buildVessels(d.network,precision_,d.junctionRadius);(void)mvcad::buildCad(d.cad,precision_);
-    for(const auto& branch:vessels.branches)if(branch.state==mvcad::VesselBuildState::Failed)throw std::runtime_error(branch.message.toStdString());
-    if(d.junctionRadius>0)for(const auto& junction:vessels.junctions)if(junction.state==mvcad::VesselBuildState::Failed)throw std::runtime_error(junction.message.toStdString());
+    (void)mvcad::serializeDocument(d);
+    if(!d.cad.sketches.empty()||!d.cad.features.empty())throw std::runtime_error("Classic sketch/modeling parts are not supported by this centerline workbench.");
     undo_->push(new Change(document_,d,[this](const auto& state){restore(state);},text));
 }
-void MainWindow::restore(const mvcad::Document& d){document_=d;if(selectedSketch_>=int(d.cad.sketches.size())){selectedSketch_=-1;sketchMode_=false;viewport_->editSketch(-1);}rebuild();}
+void MainWindow::restore(const mvcad::Document& d){
+    // Display edits must never request kernel work.
+    const auto old=mvcad::serializePart(document_.network),next=mvcad::serializePart(d.network);
+    const bool changed=old!=next||document_.junctionRadius!=d.junctionRadius;
+    document_=d;if(selectedCurve_>=int(d.network.curves.size()))selectedCurve_=-1;rebuild(false,changed);
+}
 void MainWindow::updateTitle(){setWindowTitle(QString("MVCAD — %1%2  [%3]").arg(path_.isEmpty()?"Untitled Part":QFileInfo(path_).fileName()).arg(undo_->isClean()?"":" *").arg(MVCAD_VERSION));}
 bool MainWindow::mayDiscard() {
     if(undo_->isClean())return true;
@@ -241,38 +298,53 @@ bool MainWindow::save(bool as) {
     if(filename.isEmpty()||as)filename=QFileDialog::getSaveFileName(this,"Save MVCAD Part",filename.isEmpty()?"Untitled.mvcad":filename,"MVCAD part (*.mvcad)");
     if(filename.isEmpty())return false;
     if(!filename.endsWith(".mvcad",Qt::CaseInsensitive))filename+=".mvcad";
-    try{mvcad::saveDocument(filename,document_);path_=filename;undo_->setClean();rebuild();statusBar()->showMessage("Part saved",3000);return true;}
+    try{mvcad::saveDocument(filename,document_);path_=filename;undo_->setClean();rebuild(false,false);statusBar()->showMessage("Part saved",3000);return true;}
     catch(const std::exception& e){QMessageBox::critical(this,"Save failed",e.what());return false;}
 }
-void MainWindow::newPart(){if(!mayDiscard())return;document_={};path_.clear();selected_=selectedSketch_=selectedFeature_=-1;sketchMode_=false;selectedPoints_.clear();viewport_->editSketch(-1);viewport_->setPlanesVisible(true);undo_->clear();rebuild(true);tabs_->setCurrentIndex(0);}
+void MainWindow::newPart(){if(!mayDiscard())return;document_={};path_.clear();selected_=selectedCurve_=-1;selectedBody_.clear();selectedPoints_.clear();viewport_->clearGeometrySelection();undo_->clear();rebuild(true);tabs_->setCurrentIndex(0);}
+
 void MainWindow::openDialog(){auto p=QFileDialog::getOpenFileName(this,"Open MVCAD Part",{},"MVCAD part (*.mvcad)");if(!p.isEmpty())openPath(p);}
-void MainWindow::openPath(const QString& path) {
-    try{auto d=mvcad::loadDocument(path);(void)mvcad::buildVessels(d.network,precision_,d.junctionRadius);(void)mvcad::buildCad(d.cad,precision_);if(!mayDiscard())return;document_=std::move(d);path_=path;selected_=selectedSketch_=selectedFeature_=-1;sketchMode_=false;viewport_->editSketch(-1);viewport_->setPlanesVisible(document_.cad.features.empty()&&document_.network.branches.empty());undo_->clear();rebuild(true);}
+void MainWindow::openPath(const QString& path){
+    try{auto d=mvcad::loadDocument(path);if(!d.cad.sketches.empty()||!d.cad.features.empty())throw std::runtime_error("This part contains classic CAD sketches or features. Use the previous MVCAD version to open it; the centerline workbench will not discard them.");if(!mayDiscard())return;document_=std::move(d);path_=path;selected_=selectedCurve_=-1;selectedBody_.clear();selectedPoints_.clear();viewport_->clearGeometrySelection();undo_->clear();rebuild(true);}
     catch(const std::exception& e){QMessageBox::critical(this,"Open failed",e.what());}
 }
-void MainWindow::openExample(){if(!mayDiscard())return;document_={};document_.network=mvcad::demoNetwork();path_.clear();selected_=selectedSketch_=selectedFeature_=-1;sketchMode_=false;viewport_->editSketch(-1);viewport_->setPlanesVisible(false);undo_->clear();rebuild(true);tabs_->setCurrentIndex(3);}
+
+void MainWindow::openExample(){
+    if(!mayDiscard())return;document_={};document_.network=mvcad::buildNetwork({{"Mother",{{-30,0,0},{0,0,0}}},{"Daughter 1",{{0,0,0},{30,30,0}}},{"Daughter 2",{{0,0,0},{30,-30,0}}}});
+    for(int i=0;i<int(document_.network.branches.size());++i){auto& b=document_.network.branches[i];b.diameter=i==0?8:6;b.startSetback=b.endSetback=.3;}
+    mvcad::ensureCurveDefinitions(document_);for(auto& p:document_.points)p.hidden=true;
+    path_.clear();selected_=selectedCurve_=-1;selectedBody_.clear();selectedPoints_.clear();viewport_->clearGeometrySelection();undo_->clear();rebuild(true);tabs_->setCurrentIndex(2);
+}
+
 void MainWindow::importCsv() {
-    auto path=QFileDialog::getOpenFileName(this,"Import Points",{},"CSV points (*.csv)");if(path.isEmpty())return;
-    try{QFile file(path);if(!file.open(QIODevice::ReadOnly))throw std::runtime_error(file.errorString().toStdString());if(file.size()>16*1024*1024)throw std::runtime_error("CSV exceeds 16 MB.");auto imported=mvcad::parsePointsCsv(file.readAll());auto d=document_;
-        QSet<QString> used;for(auto p:d.points)used.insert(p.id);for(auto p:imported){auto original=p.id;int suffix=2;while(used.contains(p.id))p.id=original+QString("_%1").arg(suffix++);used.insert(p.id);d.points.push_back(p);}
-        if(d.points.size()>50000)throw std::runtime_error("At most 50,000 imported points are supported.");commit(d,"Import points");viewport_->setPlanesVisible(false);viewport_->setCenterlines(true);viewport_->fitAll();tabs_->setCurrentIndex(2);statusBar()->showMessage("Points imported. Select points, then Curve Through Points to construct a centerline.",12000);
+    const auto paths=QFileDialog::getOpenFileNames(this,"Import Point Sets",{},"CSV points (*.csv)");if(paths.isEmpty())return;
+    try{auto d=document_;for(const auto& path:paths){QFile file(path);if(!file.open(QIODevice::ReadOnly))throw std::runtime_error(file.errorString().toStdString());if(file.size()>16*1024*1024)throw std::runtime_error("CSV exceeds 16 MB.");
+        const auto imported=mvcad::parsePointsCsv(file.readAll());const auto base=QFileInfo(path).completeBaseName();QString name=base;int n=2;
+        while(std::any_of(d.pointSets.begin(),d.pointSets.end(),[&](const auto& set){return set.id==name;}))name=base+QString("_%1").arg(n++);
+        mvcad::appendPointSet(d,name,imported);
+    }commit(d,"Import point sets");viewport_->setCenterlines(true);viewport_->fitAll();tabs_->setCurrentIndex(0);statusBar()->showMessage("Point sets imported. Select points or a set, then Curve Through Points.",10000);
     }catch(const std::exception& e){QMessageBox::warning(this,"Import failed",e.what());}
 }
+
 void MainWindow::closeEvent(QCloseEvent* e){if(mayDiscard())e->accept();else e->ignore();}
-bool MainWindow::smokeCheck() {
-    openExample();selectBranch(1);diameter_->setValue(6.25);start_->setValue(15);
-    auto smokeNetwork=document_.network;mvcad::setBranchParameters(smokeNetwork,1,diameter_->value(),start_->value()/100,end_->value()/100);commit(smokeNetwork,"Smoke: assign diameter");
-    if(document_.network.branches.size()!=5||document_.network.branches[1].diameter!=6.25||viewport_->selected()!=1)return false;
-    undo_->undo();if(document_.network.branches[1].diameter!=6)return false;
-    undo_->redo();if(document_.network.branches[1].diameter!=6.25)return false;
-    undo_->setClean();newPart();
-    mvcad::Document d;
-    mvcad::Sketch rectangle;rectangle.id="Sketch1";rectangle.profile=mvcad::ProfileType::Rectangle;rectangle.points={{-10,-10},{10,10}};d.cad.sketches.push_back(rectangle);
-    mvcad::CadFeature boss;boss.id="Boss-Extrude1";boss.sketch=0;boss.depth=10;d.cad.features.push_back(boss);commit(d,"Smoke: extrude rectangle");
-    mvcad::Sketch circle;circle.id="Sketch2";circle.profile=mvcad::ProfileType::Circle;circle.points={{0,0}};circle.radius=3;d.cad.sketches.push_back(circle);
-    mvcad::CadFeature cut;cut.id="Cut-Extrude2";cut.sketch=1;cut.operation=mvcad::CadOperation::Cut;cut.extent=mvcad::CadExtent::ThroughAll;d.cad.features.push_back(cut);commit(d,"Smoke: through cut");
-    if(document_.cad.features.size()!=2||mvcad::buildCad(document_.cad,precision_).volume>=4000)return false;
-    undo_->undo();if(document_.cad.features.size()!=1)return false;undo_->redo();if(document_.cad.features.size()!=2)return false;
-    QTemporaryDir temporary;auto filename=temporary.filePath("smoke.mvcad");mvcad::saveDocument(filename,document_);if(mvcad::serializeDocument(mvcad::loadDocument(filename))!=mvcad::serializeDocument(document_))return false;
-    undo_->setClean();selectBranch(-1);viewport_->setPlanesVisible(false);viewport_->fitAll();return true;
+bool MainWindow::smokeCheck(){
+    if(tabs_->count()!=3||tabs_->tabText(0)!="Points"||tabs_->tabText(1)!="Centerlines"||tabs_->tabText(2)!="Auto Sweep")return false;
+    if(!dialogSmokeCheck()||!waitForBuild())return false;undo_->setClean();openExample();
+    int heartbeats=0;QTimer heartbeat;connect(&heartbeat,&QTimer::timeout,this,[&]{++heartbeats;});heartbeat.start(5);
+    if(!waitForBuild()||!geometry_->nativeShape||heartbeats<2)return false;heartbeat.stop();
+    selectBranch(0);auto edited=document_.network;edited.branches[0].diameter=9;commit(edited,"Smoke diameter");
+    edited.branches[0].diameter=10;commit(edited,"Smoke latest diameter");
+    if(!waitForBuild()||document_.network.branches[0].diameter!=10||!geometry_->nativeShape)return false;
+    undo_->undo();if(!waitForBuild()||document_.network.branches[0].diameter!=9)return false;
+    undo_->redo();if(!waitForBuild()||document_.network.branches[0].diameter!=10)return false;
+    const auto builds=builds_->buildCount();selectedBody_="vessels";bodyVisibility(true);bodyTransparency();bodyVisibility(false);
+    QApplication::processEvents();if(builds_->busy()||builds_->buildCount()!=builds)return false;
+    if(document_.bodyDisplay.empty()||document_.bodyDisplay.front().hidden||document_.bodyDisplay.front().opacity>=1)return false;
+    undo_->undo();if(!document_.bodyDisplay.front().hidden)return false;undo_->redo();if(document_.bodyDisplay.front().hidden||builds_->buildCount()!=builds)return false;
+    auto next=document_;mvcad::appendPointSet(next,"Manual",{{"Extra",{50,0,0}}});commit(next,"Smoke point set");
+    if(builds_->busy()||document_.pointSets.size()!=1)return false;
+    auto* cloud=tree_->topLevelItem(0)->child(1);cloud->setExpanded(true);QApplication::processEvents();
+    QTemporaryDir temporary;auto filename=temporary.filePath("smoke.mvcad");mvcad::saveDocument(filename,document_);
+    if(mvcad::serializeDocument(mvcad::loadDocument(filename))!=mvcad::serializeDocument(document_))return false;
+    undo_->setClean();selectedBody_="vessels";bodyTransparency();undo_->setClean();selectedBody_.clear();viewport_->clearGeometrySelection();selectBranch(-1);viewport_->fitAll();return true;
 }

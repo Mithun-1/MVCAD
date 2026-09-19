@@ -10,8 +10,9 @@ namespace mvcad {
 
 enum class Plane { Front, Top, Right };
 enum class ProfileType { Circle, Rectangle, Polyline };
-enum class CadOperation { Boss, Cut };
-enum class CadExtent { Blind, ThroughAll, MidPlane };
+enum class CadOperation { Boss, Cut, Fillet, DeleteBody };
+enum class CadExtent { Blind, ThroughAll, MidPlane, TwoDirections };
+enum class CadBodyMode { Merge, NewBody };
 
 struct Sketch {
     QString id;
@@ -31,6 +32,12 @@ struct CadFeature {
     CadExtent extent = CadExtent::Blind;
     double depth = 1;
     bool reversed = false;
+    double secondDepth = 0;
+    double startOffset = 0;
+    CadBodyMode bodyMode = CadBodyMode::Merge;
+    QString targetBody;
+    double filletRadius = 0;
+    std::vector<QString> edgeIds;
 };
 
 struct CadModel {
@@ -38,11 +45,27 @@ struct CadModel {
     std::vector<CadFeature> features;
 };
 
+struct CadEdgeResult {
+    QString id;
+    QString bodyId;
+    std::vector<Vec3> polyline;
+    double length = 0;
+};
+
+struct CadBodyResult {
+    QString id;
+    std::vector<Triangle> triangles;
+    std::vector<CadEdgeResult> edges;
+    double volume = 0;
+    std::shared_ptr<const void> nativeShape;
+};
+
 struct CadResult {
+    // Aggregate fields are retained for existing renderers and exporters.
     std::vector<Triangle> triangles;
     double volume = 0;
-    // Owns an immutable TopoDS_Shape without exposing OCCT in this public header.
     std::shared_ptr<const void> nativeShape;
+    std::vector<CadBodyResult> bodies;
 };
 
 enum class VesselBuildState { Built, Provisional, Failed };
@@ -63,10 +86,12 @@ struct VesselResult {
     std::vector<VesselItemResult> branches;
     std::vector<VesselItemResult> junctions;
     std::vector<std::vector<Vec3>> centerlines;
+    QString bodyId = "vessels";
 };
 
 Vec3 planePoint(Plane plane,QPointF point,double offset=0);
 Vec3 planeNormal(Plane plane);
+Network connectCenterlinesWithSplineConnections(const std::vector<Curve>& curves,double tolerance=1e-6);
 Network addCenterlineWithSplineConnections(const Network& previous,const Curve& curve);
 CadResult buildCad(const CadModel& model,double deflection=1e-3);
 VesselResult buildVessels(const Network& network,double deflection=1e-3,double junctionRadius=0);

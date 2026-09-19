@@ -2,7 +2,7 @@ name: Build, test and package
 on:
   push:
     branches: [main]
-    tags: ['v*-dev.*']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -68,12 +68,33 @@ jobs:
           "${{ github.workspace }}/.tools/occt/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test
         run: ctest --preset release
+      - name: Verify macOS installer helper
+        if: runner.os == 'macOS'
+        run: bash tests/MacosInstallerTests.sh
       - name: Install NSIS
         if: runner.os == 'Windows'
         run: choco install nsis --yes --no-progress
       - name: Package
         working-directory: build/release
         run: cpack -C Release
+      - name: Verify Windows installer and uninstaller
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem build/release/MVCAD-*-Setup.exe)
+          if ($installers.Count -ne 1) { throw 'Expected one Windows installer' }
+          $prefix = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'MVCAD-installer-test'))
+          $tempRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+          if (!$prefix.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $prefix)) { throw 'Unsafe or existing installer test directory' }
+          $process = Start-Process -FilePath $installers[0].FullName -ArgumentList "/S /D=$prefix" -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          python scripts/verify-deployment.py "$prefix"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application check failed' }
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'deployed-ui-smoke.png') -Destination build/deployed-installer-ui-smoke.png
+          $uninstaller = Join-Path $prefix 'Uninstall.exe'
+          $process = Start-Process -FilePath $uninstaller -ArgumentList "/S _?=$prefix" -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0 -or (Test-Path -LiteralPath (Join-Path $prefix 'bin/MVCAD.exe'))) { throw 'Uninstaller check failed' }
       - name: Verify installed runtime
         run: |
           cmake --install build/release --prefix "${{ github.workspace }}/build/deploy-check"
@@ -88,33 +109,79 @@ jobs:
             build/release/core-results.txt
             build/release/cad-results.txt
             build/release/document-results.txt
+            build/release/document-editing-results.txt
+            build/release/build-queue-results.txt
+            build/release/point-set-mirror-results.txt
             build/release/viewport-results.txt
             build/release/ui-smoke.png
+            build/release/ui-datum-points.png
+            build/release/ui-curve-definition.png
             build/release/ui-smoke-error.txt
             build/deployed-ui-smoke.png
+            build/deployed-installer-ui-smoke.png
       - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
         with:
           name: MVCAD-${{ matrix.package }}
           if-no-files-found: error
           path: |
-            build/release/MVCAD-*.zip
             build/release/MVCAD-*.exe
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: MVCAD-${{ matrix.package }}
+          if-no-files-found: error
+          path: |
             build/release/MVCAD-*.dmg
-  prerelease:
+  release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: desktop
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: MVCAD-*
           merge-multiple: true
           path: packages
-      - name: Publish development preview
+      - name: Include macOS terminal installer
+        run: cp scripts/install-macos.sh packages/install-macos.sh
+      - name: Create release checksums
+        working-directory: packages
+        shell: bash
+        run: sha256sum MVCAD-*.exe MVCAD-*.dmg install-macos.sh | sort -k2 > SHA256SUMS
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "title=MVCAD $GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "title=MVCAD $GITHUB_REF_NAME — development preview" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TITLE: ${{ steps.channel.outputs.title }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+        shell: bash
         run: |
-          printf '%s\n' 'Native Qt development preview toward v1.0. Supports reference-plane sketches, exact solid extrusion/cuts, point import and centerline creation, branch diameter editing, part saving and undo/redo. See the repository README for supported junction geometry and limitations. General constrained sketches and STEP export remain under development. Packages are unsigned.' > notes.md
-          gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --title "MVCAD $GITHUB_REF_NAME — development preview" --notes-file notes.md --prerelease
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          dmg=(packages/MVCAD-*.dmg)
+          dmg_name=$(basename "${dmg[0]}")
+          digest=$(sha256sum "${dmg[0]}" | cut -d ' ' -f 1)
+          {
+            printf '%s\n\n' 'Windows: download and run Setup.exe. macOS: open the DMG and drag MVCAD.app to Applications.'
+            printf '%s\n\n' 'Unsigned development packages. macOS signing and notarization are still pending.'
+            printf '%s\n' 'macOS terminal installation (refuses to overwrite an existing MVCAD.app):' '```bash'
+            printf "curl --fail --location --proto '=https' --proto-redir '=https' '%s/install-macos.sh' | bash -s -- --url '%s/%s' --sha256 '%s'\n" "$base" "$base" "$dmg_name" "$digest"
+            printf '%s\n\n' '```'
+            printf '%s\n' 'SHA256SUMS contains checksums for all release assets.'
+          } > notes.md
+          flags=()
+          if [[ "$PRERELEASE" == true ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TITLE" --notes-file notes.md "${flags[@]}"

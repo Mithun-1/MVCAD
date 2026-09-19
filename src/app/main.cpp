@@ -21,11 +21,16 @@ int main(int argc,char** argv) {
     }
     QFont font=app.font();font.setPointSize(9);app.setFont(font);
     QCommandLineParser cli;cli.setApplicationDescription("Microvascular CAD development preview");cli.addHelpOption();cli.addVersionOption();
+    cli.addOption({"verify-bifurcation","Create and validate a mirrored reference bifurcation; save part, screenshots and report.","directory"});
+    cli.addOption({"benchmark-network","Measure a 1000-body and 50000-point UI workload; save screenshot and report.","directory"});
     cli.addOption({"smoke-test","Run a deterministic UI smoke test and exit."});
     cli.addOption({"screenshot","Save the application window as a PNG.","path"});cli.addPositionalArgument("part","Optional .mvcad part to open.");cli.process(app);
     MainWindow window;window.show();
     if(!cli.positionalArguments().isEmpty())window.openPath(cli.positionalArguments().first());
-    if(cli.isSet("smoke-test"))QTimer::singleShot(100,&window,[&]{
+    if(cli.isSet("verify-bifurcation"))QTimer::singleShot(100,&window,[&]{try{app.exit(window.verificationGeometry(cli.value("verify-bifurcation"))?0:2);}catch(const std::exception& error){QFile report(cli.value("verify-bifurcation")+"/failure.txt");if(report.open(QIODevice::WriteOnly))report.write(error.what());app.exit(4);}});
+    else if(cli.isSet("benchmark-network"))QTimer::singleShot(100,&window,[&]{try{app.exit(window.benchmarkLargeNetwork(cli.value("benchmark-network"))?0:2);}catch(const std::exception& error){QFile report(cli.value("benchmark-network")+"/failure.txt");if(report.open(QIODevice::WriteOnly))report.write(error.what());app.exit(4);}});
+    else if(cli.isSet("smoke-test"))QTimer::singleShot(100,&window,[&]{
+        app.setProperty("mvcadVerificationDirectory",QFileInfo(cli.value("screenshot")).absolutePath());
         try{if(!window.smokeCheck()){app.exit(2);return;}}
         catch(const std::exception& e){QFile report(QFileInfo(cli.value("screenshot")).absolutePath()+"/ui-smoke-error.txt");if(report.open(QIODevice::WriteOnly))report.write(e.what());app.exit(4);return;}
         QTimer::singleShot(200,&window,[&]{
