@@ -51,7 +51,14 @@ if (!app.requestSingleInstanceLock()) {
       try {
         const response = await net.fetch(pathToFileURL(file).href);
         const headers = new Headers(response.headers);
-        headers.set('Content-Security-Policy', CSP);
+        // Emscripten's Embind generates JS bindings in the isolated CAD workers.
+        // Permit that only for worker scripts; the UI retains its stricter CSP.
+        headers.set(
+          'Content-Security-Policy',
+          /\.worker-[^/]+\.js$/.test(file)
+            ? CSP.replace("'wasm-unsafe-eval'", "'wasm-unsafe-eval' 'unsafe-eval'")
+            : CSP,
+        );
         headers.set('X-Content-Type-Options', 'nosniff');
         if (file.endsWith('.wasm')) headers.set('Content-Type', 'application/wasm');
         return new Response(response.body, { status: response.status, headers });

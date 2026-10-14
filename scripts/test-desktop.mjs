@@ -51,23 +51,28 @@ try {
       })),
     },
   ];
-  await page
-    .getByLabel('Open or import file')
-    .setInputFiles({
-      name: 'desktop.mvcad',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify(doc)),
-    });
+  await page.getByLabel('Open or import file').setInputFiles({
+    name: 'desktop.mvcad',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(doc)),
+  });
   await expect(page.getByRole('treeitem', { name: 'Body 1', exact: true })).toBeVisible({ timeout: 60000 });
   const file = path.join(output, 'desktop.step');
   await desktop.evaluate(({ session }, file) => {
-    session.defaultSession.on('will-download', (_event, item) => item.setSavePath(file));
+    globalThis.mvcadTestDownload = 'pending';
+    session.defaultSession.on('will-download', (_event, item) => {
+      item.setSavePath(file);
+      item.once('done', (_event, state) => {
+        globalThis.mvcadTestDownload = state;
+      });
+    });
   }, file);
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   await page.getByRole('combobox', { name: 'Export format', exact: true }).selectOption('step');
-  const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export STEP', exact: true }).click();
-  await (await downloaded).path();
+  await expect
+    .poll(() => desktop.evaluate(() => globalThis.mvcadTestDownload), { timeout: 60000 })
+    .toBe('completed');
   expect(await readFile(file, 'utf8')).toContain('MANIFOLD_SOLID_BREP');
   await page.screenshot({ path: path.join(output, 'desktop.png') });
   expect(errors).toEqual([]);

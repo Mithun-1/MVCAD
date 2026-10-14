@@ -28,6 +28,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npx install-electron --no
       - run: npm run test:engine
       - run: npm run build
       - run: npm run test:desktop

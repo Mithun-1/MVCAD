@@ -1,12 +1,23 @@
 {
   "appId": "com.mithun.mvcad",
   "productName": "MVCAD",
-  "directories": { "output": "release", "buildResources": "build" },
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
   "files": ["dist/**/*", "desktop/**/*", "build/icon.png", "package.json", "!node_modules/**/*"],
   "asar": true,
   "npmRebuild": false,
   "artifactName": "MVCAD-${version}-${os}-${arch}.${ext}",
-  "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.ico" },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.ico"
+  },
   "nsis": {
     "oneClick": false,
     "perMachine": false,
@@ -16,16 +27,35 @@
     "deleteAppDataOnUninstall": false
   },
   "mac": {
-    "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64", "x64"]
+      }
+    ],
     "category": "public.app-category.graphics-design",
     "icon": "build/icon.png",
     "hardenedRuntime": true
   },
   "dmg": {
     "contents": [
-      { "x": 130, "y": 220 },
-      { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
     ]
   },
-  "publish": null
+  "publish": null,
+  "extraResources": [
+    {
+      "from": "THIRD_PARTY_NOTICES.md",
+      "to": "THIRD_PARTY_NOTICES.md"
+    }
+  ]
 }
