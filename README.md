@@ -8,7 +8,6 @@ Download an installer from [GitHub Releases](https://github.com/Mithun-1/MVCAD/r
 
 - Windows: run the `MVCAD-…-win-x64.exe` installer. Choose an installation directory and launch MVCAD from the Start menu or desktop shortcut.
 - Apple Silicon Mac: open the `MVCAD-…-mac-arm64.dmg` and drag MVCAD into Applications.
-- Intel Mac: use the `MVCAD-…-mac-x64.dmg` instead, then drag MVCAD into Applications.
 
 The Electron desktop app includes the UI, reference kernel, and OpenCascade kernel; it runs offline without Node.js, a browser, or the Vite server installed. File import and export use the existing toolbar. Desktop autosave is separate from browser autosave: export your current browser document as MVCAD, then open it in the desktop app. Preview installers are unsigned and macOS builds are not notarized, so OS security prompts/restrictions apply. Trusted distribution requires Windows code signing and Apple Developer ID signing/notarization.
 
@@ -19,12 +18,12 @@ With Node.js 24 and dependencies installed:
 ```sh
 npm run desktop       # Build and launch the desktop app
 npm run desktop:win   # Windows x64 .exe installer (run on Windows)
-npm run desktop:mac   # Apple Silicon and Intel .dmg installers (run on macOS)
+npm run desktop:mac   # Apple Silicon .dmg installer (run on macOS)
 npm run desktop:pack  # Unpacked application for testing
 npm run test:desktop  # Test built UI: CAD generation, imports, STEP export, restart
 ```
 
-Outputs are in `release/`. `npm run test:desktop` requires `npm run build` first. The desktop serves only bundled files through `mvcad://app/`, with renderer sandboxing, context isolation, and no Node access. The checked-in GitHub Actions workflow builds each OS on its own runner. Run **Desktop installers** manually for artifacts; pushing a `v*` tag builds and publishes a preview GitHub Release after all three targets succeed. Signing is not configured yet. Source uploads omit personal sample models, generated output, dependencies, installers, and local tool caches; the small STEP test fixture is included.
+Outputs are in `release/`. `npm run test:desktop` requires `npm run build` first. The desktop serves only bundled files through `mvcad://app/`, with renderer sandboxing, context isolation, and no Node access. The checked-in GitHub Actions workflow builds each OS on its own runner. Run **Desktop installers** manually for artifacts; pushing a `v*` tag builds and publishes a preview GitHub Release after both targets succeed. Supported desktop targets are Windows x64 and macOS Apple Silicon (arm64). Signing is not configured yet. Source uploads omit personal sample models, generated output, dependencies, installers, and local tool caches; the small STEP test fixture is included.
 
 ## Run locally
 

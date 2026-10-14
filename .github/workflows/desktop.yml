@@ -17,9 +17,6 @@ jobs:
           - os: macos-latest
             target: mac
             arch: arm64
-          - os: macos-15-intel
-            target: mac
-            arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -59,4 +56,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" installers/* --prerelease --title "MVCAD $RELEASE_TAG" --notes "Windows x64 installer and macOS Apple Silicon/Intel disk images. On macOS, drag MVCAD into Applications. These preview builds are unsigned and not notarized; operating-system security prompts apply."
+        run: gh release create "$RELEASE_TAG" installers/* --prerelease --title "MVCAD $RELEASE_TAG" --notes "Windows x64 installer and macOS Apple Silicon disk image. On macOS, drag MVCAD into Applications. These preview builds are unsigned and not notarized; operating-system security prompts apply."
