@@ -42,7 +42,13 @@ export type ReferenceAsset = Common &
         centerV: number;
       }
   );
-export function validateReference(asset: ReferenceAsset, planeIds: Set<string>): ReferenceAsset {
+// Internal edits may reuse a previously validated, immutable payload. Imports
+// never pass this argument, so new/external data always receives a full scan.
+export function validateReference(
+  asset: ReferenceAsset,
+  planeIds: Set<string>,
+  validatedSource?: ReferenceAsset,
+): ReferenceAsset {
   if (
     !asset ||
     typeof asset.id !== 'string' ||
@@ -67,7 +73,8 @@ export function validateReference(asset: ReferenceAsset, planeIds: Set<string>):
     asset.positions.length >= 9 &&
     asset.positions.length <= MAX_REFERENCE_COORDINATES &&
     asset.positions.length % 9 === 0 &&
-    asset.positions.every((v) => Number.isFinite(v) && Math.abs(v) <= 1000000)
+    ((validatedSource?.kind === 'stl' && validatedSource.positions === asset.positions) ||
+      asset.positions.every((v) => Number.isFinite(v) && Math.abs(v) <= 1000000))
   ) {
     if (asset.transform !== undefined && !validReferenceTransform(asset.transform))
       throw new Error(
@@ -92,7 +99,8 @@ export function validateReference(asset: ReferenceAsset, planeIds: Set<string>):
     asset.kind === 'image' &&
     typeof asset.dataUrl === 'string' &&
     asset.dataUrl.length <= MAX_REFERENCE_DATA_URL_LENGTH &&
-    /^data:image\/(png|jpeg|webp|gif|bmp);base64,[A-Za-z0-9+/]+=*$/.test(asset.dataUrl) &&
+    ((validatedSource?.kind === 'image' && validatedSource.dataUrl === asset.dataUrl) ||
+      /^data:image\/(png|jpeg|webp|gif|bmp);base64,[A-Za-z0-9+/]+=*$/.test(asset.dataUrl)) &&
     planeIds.has(asset.planeId) &&
     [asset.width, asset.height].every((v) => Number.isFinite(v) && v > 0 && v <= 1000000) &&
     [asset.centerU, asset.centerV].every((v) => Number.isFinite(v) && Math.abs(v) <= 1000000)

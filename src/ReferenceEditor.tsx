@@ -1,4 +1,5 @@
 import { ArrowLeftRight, X } from 'lucide-react';
+import { useMemo } from 'react';
 import { planeName, type Document, type EvaluatedPlane } from './model';
 import { identityReferenceTransform, validateReference, type ReferenceAsset } from './references';
 
@@ -23,9 +24,18 @@ export function ReferenceEditor({
   onApply: () => void;
   onCancel: () => void;
 }) {
+  const payload = asset.kind === 'stl' ? asset.positions : asset.dataUrl;
+  // Validate the payload once; opacity and placement never modify its vertices/pixels.
+  const validatedSource = useMemo(() => {
+    try {
+      return validateReference(asset, new Set(geometry.map((p) => p.id)));
+    } catch {
+      return undefined;
+    }
+  }, [payload]);
   let error = '';
   try {
-    validateReference(asset, new Set(geometry.map((p) => p.id)));
+    validateReference(asset, new Set(geometry.map((p) => p.id)), validatedSource);
   } catch (e) {
     error = (e as Error).message;
   }

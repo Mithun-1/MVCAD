@@ -68,7 +68,7 @@ export function planeName(doc: Document, id: string): string {
         doc.groups?.find((p) => p.id === id)?.name ??
         id);
 }
-export function validateDocument(value: unknown): Document {
+export function validateDocument(value: unknown, validatedPrevious?: Document): Document {
   if (!value || typeof value !== 'object') throw new Error('This is not an MVCAD document.');
   const doc = value as Document;
   if (doc.autoSweep !== undefined && typeof doc.autoSweep !== 'boolean')
@@ -313,8 +313,10 @@ export function validateDocument(value: unknown): Document {
   });
   if (doc.references !== undefined && (!Array.isArray(doc.references) || doc.references.length > 100))
     throw new Error('Import at most 100 references.');
+  const referencePlanes = new Set([...BASE_PLANES, ...doc.planes].map((p) => p.id));
+  const previousReferences = new Map(validatedPrevious?.references?.map((asset) => [asset.id, asset]));
   const references = (doc.references ?? []).map((asset) => {
-    const result = validateReference(asset, new Set([...BASE_PLANES, ...doc.planes].map((p) => p.id)));
+    const result = validateReference(asset, referencePlanes, previousReferences.get(asset?.id));
     if (
       ids.has(result.id) ||
       result.id === 'origin' ||

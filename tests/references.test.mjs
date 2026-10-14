@@ -119,3 +119,161 @@ test('references roundtrip and image attachment protects the reference plane', (
   doc.references.push({ ...image, id: 'another' });
   assert.throws(() => validateDocument(doc), /Duplicate reference/);
 });
+import { referenceObjects, disposeReferenceObjects } from '../src/referenceObjects.ts';
+import { Group, Mesh, Plane, Raycaster, Texture, TorusKnotGeometry } from 'three';
+
+test('reference edits reuse mesh buffers and picking index; deletion releases resources', () => {
+  const group = new Group();
+  const textures = new Map();
+  const positions = new Float32Array([-5, -5, 0, 5, -5, 0, 0, 5, 0]);
+  let asset = { id: 'ref', name: 'STL', kind: 'stl', visible: true, opacity: 0.6, positions };
+  const update = (assets = [asset], clips = [], edges = false, dark = false) =>
+    referenceObjects(group, assets, [], clips, () => {}, textures, edges, dark);
+  update();
+  const mesh = group.children[0],
+    geometry = mesh.geometry,
+    index = geometry.boundsTree;
+  assert.equal(geometry.attributes.position.array, positions, 'reuse the immutable imported buffer');
+  let disposed = 0;
+  geometry.addEventListener('dispose', () => disposed++);
+  const clip = new Plane(new Vector3(0, 0, 1), 1);
+  for (let i = 0; i < 20; i++) {
+    asset = {
+      ...asset,
+      opacity: i / 20,
+      transform: { axes: [2, 1, 0], rotation: [0, 45, 0], translation: [i, 0, 0] },
+    };
+    update([asset], [clip], true, true);
+    assert.equal(group.children[0], mesh);
+    assert.equal(mesh.geometry, geometry);
+    assert.equal(geometry.boundsTree, index);
+  }
+  const edgeGeometry = mesh.children[0].geometry;
+  update([{ ...asset, visible: false }]);
+  assert.equal(group.children.length, 0, 'hidden references are excluded from picking and fit');
+  update();
+  assert.equal(group.children[0], mesh);
+  update([asset], [], true);
+  assert.equal(mesh.children[0].geometry, edgeGeometry);
+  assert.equal(disposed, 0);
+  update([]);
+  assert.equal(disposed, 1);
+  assert.equal(geometry.boundsTree, undefined);
+  update();
+  assert.notEqual(group.children[0], mesh, 'undo recreates a released reference safely');
+  disposeReferenceObjects(group);
+  assert.equal(group.children.length, 0);
+});
+
+test('accelerated reference picking preserves transformed and sectioned surface hits', () => {
+  const group = new Group();
+  const source = new TorusKnotGeometry(30, 8, 200, 24).toNonIndexed();
+  const asset = {
+    id: 'ref',
+    name: 'STL',
+    kind: 'stl',
+    visible: true,
+    opacity: 0.6,
+    positions: source.attributes.position.array,
+    transform: { axes: [2, 1, 0], rotation: [17, 35, 9], translation: [5, 10, 3] },
+  };
+  const original = asset.positions.slice();
+  for (const clips of [[], [new Plane(new Vector3(0, 0, -1), 0)]]) {
+    referenceObjects(group, [asset], [], clips, () => {}, new Map(), false, false);
+    group.updateMatrixWorld(true);
+    const mesh = group.children[0];
+    for (let x = -40; x <= 40; x += 8) {
+      const ray = new Raycaster(new Vector3(x, 10, 100), new Vector3(0, 0, -1));
+      const ordinary = [];
+      Mesh.prototype.raycast.call(mesh, ray, ordinary);
+      ordinary.sort((a, b) => a.distance - b.distance);
+      const accelerated = ray.intersectObject(mesh, false);
+      assert.equal(ray.firstHitOnly, undefined, 'reference picking must not change other object picking');
+      const visible = (hit) => clips.every((clip) => clip.distanceToPoint(hit.point) >= 0);
+      const expected = ordinary.find(visible),
+        actual = accelerated.find(visible);
+      assert.equal(!!actual, !!expected);
+      if (actual) assert.ok(actual.point.distanceTo(expected.point) < 1e-5);
+      if (clips.length)
+        assert.equal(accelerated.length, ordinary.length, 'retain rear hits behind section clips');
+    }
+  }
+  assert.deepEqual(asset.positions, original, 'acceleration never changes stored or exported vertices');
+  disposeReferenceObjects(group);
+  source.dispose();
+});
+
+test('reference image sizing reuses its texture and geometry while updating placement', () => {
+  const group = new Group(),
+    texture = new Texture();
+  const textures = new Map([['data:image/png;base64,test', texture]]);
+  const planes = [{ id: 'front', frame: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1] }];
+  let asset = {
+    id: 'image',
+    name: 'Image',
+    kind: 'image',
+    visible: true,
+    opacity: 0.6,
+    dataUrl: 'data:image/png;base64,test',
+    planeId: 'front',
+    width: 10,
+    height: 20,
+    centerU: 0,
+    centerV: 0,
+  };
+  referenceObjects(group, [asset], planes, [], () => {}, textures, false, false);
+  const mesh = group.children[0],
+    geometry = mesh.geometry;
+  asset = { ...asset, width: 40, height: 60, centerU: 5, centerV: 8 };
+  referenceObjects(group, [asset], planes, [], () => {}, textures, false, false);
+  assert.equal(group.children[0], mesh);
+  assert.equal(mesh.geometry, geometry);
+  assert.equal(mesh.material.map, texture);
+  assert.deepEqual(new Vector3(0.5, 0.5, 0).applyMatrix4(mesh.matrix).toArray(), [25, 38, 0]);
+  disposeReferenceObjects(group);
+  texture.dispose();
+});
+
+test('metadata edits reuse validated payloads but changed payloads and external documents are fully checked', () => {
+  const positions = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]);
+  const reference = validateReference(
+    { id: 'ref', name: 'STL', kind: 'stl', visible: true, opacity: 0.6, positions },
+    new Set(),
+  );
+  const previous = validateDocument({ ...newDocument(), references: [reference] });
+  let scans = 0;
+  const every = positions.every;
+  positions.every = function (...args) {
+    scans++;
+    return every.apply(this, args);
+  };
+  const edited = {
+    ...reference,
+    opacity: 0.4,
+    transform: { axes: [0, 1, 2], rotation: [1, 2, 3], translation: [4, 5, 6] },
+  };
+  validateReference(edited, new Set(), reference);
+  validateDocument({ ...previous, references: [edited] }, previous);
+  assert.equal(scans, 0, 'metadata-only edits must not revisit millions of coordinates');
+  validateDocument({ ...previous, references: [edited] });
+  assert.equal(scans, 1, 'external documents always validate coordinates');
+  const invalid = { ...edited, positions: new Float32Array([NaN, 0, 0, 10, 0, 0, 0, 10, 0]) };
+  assert.throws(() => validateReference(invalid, new Set(), reference), /Invalid reference/);
+  assert.throws(
+    () => validateDocument({ ...previous, references: [invalid] }, previous),
+    /Invalid reference/,
+  );
+  assert.throws(
+    () => validateReference({ ...edited, opacity: 2 }, new Set(), reference),
+    /Invalid reference/,
+  );
+  assert.throws(
+    () =>
+      validateReference(
+        { ...edited, transform: { ...edited.transform, rotation: [NaN, 0, 0] } },
+        new Set(),
+        reference,
+      ),
+    /Invalid reference transform/,
+  );
+});

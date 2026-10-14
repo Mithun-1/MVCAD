@@ -547,7 +547,7 @@ export function App({ initial }: { initial: InitialWorkspace }) {
       next = { ...next };
       delete next.boundingBox;
     }
-    dispatch({ type: 'commit', doc: validateDocument(pruneGroups(next)) });
+    dispatch({ type: 'commit', doc: validateDocument(pruneGroups(next), doc) });
   };
   const finishRename = (save: boolean, restoreFocus: boolean) => {
     if (!rename || !renaming.current) return;

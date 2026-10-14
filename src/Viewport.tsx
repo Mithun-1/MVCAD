@@ -14,7 +14,7 @@ import { planeDisplayBounds, pointContentBounds } from './displayBounds';
 import type { SweepMesh } from './sweep';
 import { setOrbitPivot } from './orbitPivot';
 import type { ReferenceAsset } from './references';
-import { referenceObjects } from './referenceObjects';
+import { referenceObjects, disposeReferenceObjects } from './referenceObjects';
 import { boundingPlanePatch, sectionPlanes, type BoxSpacing, type SectionView } from './viewTools';
 import {
   createPointResolver,
@@ -664,6 +664,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       renderer.domElement.removeEventListener('pointercancel', cancelImageDrag);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       renderer.domElement.removeEventListener('dblclick', onDouble);
+      disposeReferenceObjects(references);
       disposeObject(scene);
       referenceTextures.forEach((texture) => texture.dispose());
       referenceTextures.clear();
@@ -1018,7 +1019,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       ...(props.doc.references ?? []).filter((a) => a.id !== props.referenceDraft?.id),
       ...(props.referenceDraft ? [props.referenceDraft] : []),
     ];
-    const dispose = referenceObjects(
+    referenceObjects(
       r.references,
       assets,
       props.geometry,
@@ -1035,11 +1036,6 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     )
       r.fit();
     lastReferenceDraft.current = props.referenceDraft?.id;
-    return () => {
-      r.clearHover();
-      dispose();
-      if (runtime.current === r) r.render();
-    };
   }, [
     props.doc.references,
     props.referenceDraft,
