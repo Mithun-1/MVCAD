@@ -15,6 +15,7 @@ import type { SweepMesh } from './sweep';
 import { setOrbitPivot } from './orbitPivot';
 import type { ReferenceAsset } from './references';
 import { referenceObjects, disposeReferenceObjects } from './referenceObjects';
+import { measureNumber, type MeasureSelection, type MeasureResult } from './measure';
 import { boundingPlanePatch, sectionPlanes, type BoxSpacing, type SectionView } from './viewTools';
 import {
   createPointResolver,
@@ -49,6 +50,10 @@ type Props = {
   generationProgress?: number;
   sections: SectionView[];
   spacing?: BoxSpacing;
+  measureActive?: boolean;
+  measureSelections?: MeasureSelection[];
+  measureResult?: MeasureResult;
+  onMeasure?: (selection: MeasureSelection | null, shift: boolean) => void;
   viewControls?: ReactNode;
   referenceDraft?: ReferenceAsset;
   referenceSizing?: boolean;
@@ -66,6 +71,7 @@ type Runtime = {
   solids: THREE.Group;
   bodyEdges: THREE.Group;
   references: THREE.Group;
+  measurements: THREE.Group;
   referenceTextures: Map<string, THREE.Texture>;
   pointTexture: THREE.CanvasTexture;
   curveMarkerTextures: Record<'dot' | 'diamond' | 'ring', THREE.CanvasTexture>;
@@ -116,6 +122,7 @@ function disposeObject(group: THREE.Object3D) {
 export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, ref) {
   const host = useRef<HTMLDivElement>(null);
   const dimensionOverlay = useRef<SVGSVGElement>(null);
+  const measureOverlay = useRef<SVGSVGElement>(null);
   const axisIndicator = useRef<AxisIndicatorApi>(null);
   const runtime = useRef<Runtime | null>(null);
   const lastReferenceDraft = useRef<string | undefined>(undefined);
@@ -203,6 +210,8 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     const references = new THREE.Group();
     const referenceTextures = new Map<string, THREE.Texture>();
     scene.add(references);
+    const measurements = new THREE.Group();
+    scene.add(measurements);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x52647d, 2));
     const light = new THREE.DirectionalLight(0xffffff, 2.2);
     light.position.set(1, 2, 3);
@@ -266,6 +275,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       index?: number;
       point?: PointReference;
       position: THREE.Vector3;
+      faceIndex?: number;
     };
     let pointer: { clientX: number; clientY: number } | null = null;
     let hovered: Pick | undefined;
@@ -356,6 +366,36 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
             leader.setAttribute(key, String(value));
         }
         axisIndicator.current?.update(camera);
+        const measureSvg = measureOverlay.current;
+        const selected = latest.current.measureSelections ?? [];
+        if (measureSvg && selected.length) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const result = latest.current.measureResult;
+          const locations = result ? [result.from, result.to] : selected.map((item) => item.position);
+          const projected = locations.map((point) => {
+            const p = new THREE.Vector3(...point).project(camera);
+            return [((p.x + 1) * rect.width) / 2, ((1 - p.y) * rect.height) / 2];
+          });
+          measureSvg.querySelectorAll('[data-measure-point]').forEach((element, i) => {
+            const p = projected[i];
+            if (p) element.setAttribute('transform', `translate(${p[0]},${p[1]})`);
+          });
+          const line = measureSvg.querySelector('line');
+          if (line && projected.length === 2)
+            for (const [key, value] of Object.entries({
+              x1: projected[0][0],
+              y1: projected[0][1],
+              x2: projected[1][0],
+              y2: projected[1][1],
+            }))
+              line.setAttribute(key, String(value));
+          const label = measureSvg.querySelector('[data-measure-label]');
+          if (label && projected.length === 2)
+            label.setAttribute(
+              'transform',
+              `translate(${(projected[0][0] + projected[1][0]) / 2},${(projected[0][1] + projected[1][1]) / 2 - 14})`,
+            );
+        }
       });
     };
     const fit = () => {
@@ -406,6 +446,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       bodyEdges,
       references,
       referenceTextures,
+      measurements,
       pointTexture,
       curveMarkerTextures,
       render,
@@ -605,7 +646,12 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
           position: referenceHit.point.clone(),
         };
       if (solidHit)
-        return { id: solidHit.object.userData.id, object: solidHit.object, position: solidHit.point.clone() };
+        return {
+          id: solidHit.object.userData.id,
+          object: solidHit.object,
+          position: solidHit.point.clone(),
+          faceIndex: solidHit.faceIndex ?? undefined,
+        };
       const hits = ray.intersectObjects([...planes.children, origin], true);
       const hit = hits.find(
         (h) =>
@@ -628,6 +674,41 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       if (dragged || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
       const hit = pick(e);
       if (e.button === 0) {
+        if (latest.current.measureActive) {
+          let selection: MeasureSelection | null = null;
+          if (hit) {
+            const props = latest.current;
+            const position = hit.position.toArray() as [number, number, number];
+            selection = { key: hit.id, label: 'Picked location', position };
+            if (hit.point) {
+              const p = createPointResolver(props.doc)(hit.point);
+              if (p)
+                selection = {
+                  key: `${hit.point.setId}:${hit.point.pointId}`,
+                  label: p.name,
+                  position: [p.x, p.y, p.z],
+                };
+            } else if (hit.id.startsWith('__body__:') && props.sweep && hit.faceIndex !== undefined) {
+              const body = Number(hit.id.slice(9));
+              const triangle = props.sweep.bodyRanges[body].start / 3 + hit.faceIndex;
+              const id = props.sweep.surfaceIds[triangle];
+              const face = props.sweep.cadFaces?.find((face) => face.body === body && face.id === id);
+              if (face)
+                selection = {
+                  key: `${hit.id}:${id}`,
+                  label: `Body ${body + 1} · Face ${face.index + 1}`,
+                  position,
+                  face,
+                };
+            } else if (hit.object.userData.reference) selection.label = 'Reference surface location';
+            else if (hit.id === 'origin') {
+              selection.label = 'Origin';
+              selection.position = [0, 0, 0];
+            }
+          }
+          latest.current.onMeasure?.(selection, e.shiftKey);
+          return;
+        }
         if (hit?.point) latest.current.onPointPick(hit.point, e.clientX, e.clientY);
         else latest.current.onSelect(hit?.id ?? null);
       } else if (e.button === 2) {
@@ -635,6 +716,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       }
     };
     const onDouble = (e: MouseEvent) => {
+      if (latest.current.measureActive) return;
       const id = pick(e);
       if (id) normalTo(id.id);
     };
@@ -1045,6 +1127,51 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     props.darkMode,
   ]);
 
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
+    disposeObject(r.measurements);
+    r.measurements.clear();
+    if (props.sweep)
+      for (const selection of props.measureSelections ?? []) {
+        const face = selection.face;
+        if (!face) continue;
+        const range = props.sweep.bodyRanges[face.body];
+        if (!range) continue;
+        const positions: number[] = [];
+        for (let i = range.start; i < range.start + range.count; i += 3) {
+          if (props.sweep.surfaceIds[i / 3] !== face.id) continue;
+          for (let j = 0; j < 3; j++) {
+            const vertex = props.sweep.indices[i + j] * 3;
+            positions.push(
+              props.sweep.positions[vertex],
+              props.sweep.positions[vertex + 1],
+              props.sweep.positions[vertex + 2],
+            );
+          }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const mesh = new THREE.Mesh(
+          geometry,
+          new THREE.MeshBasicMaterial({
+            color: '#00cfa0',
+            opacity: 0.45,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -3,
+            clippingPlanes: sectionPlanes(props.sections, props.geometry),
+          }),
+        );
+        mesh.position.fromArray(props.sweep.origin);
+        mesh.renderOrder = 3;
+        r.measurements.add(mesh);
+      }
+    r.render();
+  }, [props.measureSelections, props.measureResult, props.sweep, props.sections, props.geometry]);
+
   return (
     <section
       className="viewport"
@@ -1053,6 +1180,31 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     >
       <div className="canvas-host" ref={host} />
       {props.viewControls}
+      {props.measureActive && !!props.measureSelections?.length && (
+        <svg
+          className="spacing-dimension measure-dimension"
+          ref={measureOverlay}
+          aria-label="Measurement markers"
+        >
+          {props.measureSelections.length === 2 && <line />}
+          {props.measureSelections.map((_, index) => (
+            <g data-measure-point="" key={index}>
+              <circle r="6" />
+              <text x="10" y="-10">
+                {index ? 'B' : 'A'}
+              </text>
+            </g>
+          ))}
+          {props.measureResult && (
+            <g data-measure-label="">
+              <rect x="-90" y="-14" width="180" height="28" rx="3" />
+              <text textAnchor="middle" dominantBaseline="central">
+                {measureNumber(props.measureResult.distance)}
+              </text>
+            </g>
+          )}
+        </svg>
+      )}
       {props.spacing && (
         <svg
           className="spacing-dimension"

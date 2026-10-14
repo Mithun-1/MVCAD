@@ -2,6 +2,8 @@ import wasmUrl from '../engine/planes.wasm?url';
 import type { SweepMesh } from './sweep';
 import { getCadKernel } from './cadKernel';
 import { buildCadBody } from './cadBody';
+import { measureCadDistance } from './cadMeasure';
+import type { MeasureSelection } from './measure';
 import { BASE_PLANES, type EvaluatedPlane, type FilletFeature, type ReferencePlane } from './model';
 import { MAX_POINTS, type PointSet, type EvaluatedPointSet } from './points';
 import { suppressedFeatures, type CurveFeature, type EvaluatedCurve } from './curves';
@@ -45,8 +47,28 @@ self.onmessage = async (
     autoSweep?: boolean;
     removeCaps?: boolean;
     regeneration?: number;
+    measureRequest?: number;
+    selections?: MeasureSelection[];
   }>,
 ) => {
+  if (event.data.measureRequest !== undefined) {
+    const measureRequest = event.data.measureRequest;
+    try {
+      await getCadKernel();
+      if (!cachedBody?.cadBreps || event.data.selections?.length !== 2)
+        throw new Error('Select two available objects.');
+      self.postMessage({
+        measureRequest,
+        result: measureCadDistance(cachedBody.cadBreps, event.data.selections),
+      });
+    } catch (error) {
+      self.postMessage({
+        measureRequest,
+        measureError: error instanceof Error ? error.message : 'Measurement failed.',
+      });
+    }
+    return;
+  }
   const { sequence, planes, preview, pointSets = [], pointPreview, curves = [], curvePreview } = event.data;
   try {
     const api = await kernel;

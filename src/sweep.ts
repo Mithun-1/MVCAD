@@ -10,6 +10,7 @@ import type { Document } from './model.ts';
 import { cylinderSweep } from './cylinderSweep.ts';
 
 export type SweepMesh = {
+  cadFaces?: import('./measure').CadFaceMeasurement[];
   cadBreps?: string[];
   cadEdges?: { key: string; positions: Float32Array; body: number }[];
   positions: Float32Array;

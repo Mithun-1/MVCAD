@@ -2524,3 +2524,52 @@ dd {
 .reference-editor .form-actions {
   flex-shrink: 0;
 }
+
+.measure-panel .view-tool-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.measure-selection,
+.measure-result {
+  border-top: 1px solid var(--ui-border);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.measure-panel dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin: 10px 0;
+}
+.measure-panel dl > span {
+  display: contents;
+}
+.measure-panel dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.measure-result output {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  user-select: text;
+}
+.measure-dimension circle {
+  fill: #00d99b;
+  stroke: #005b42;
+  stroke-width: 2px;
+}
+.measure-dimension line {
+  stroke: #00865e;
+  stroke-width: 2px;
+}
+[data-theme='dark'] .measure-dimension circle {
+  fill: #00ffb7;
+  stroke: #fff;
+}
+[data-theme='dark'] .measure-dimension line {
+  stroke: #00ffb7;
+}

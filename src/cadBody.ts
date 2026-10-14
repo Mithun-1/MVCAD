@@ -3,6 +3,7 @@ import type { BRepBuilderAPI_MakeShape, OpenCascadeInstance } from 'replicad-ope
 import type { Document } from './model.ts';
 import { resolvePoint, type EvaluatedCurve } from './curves.ts';
 import { sweepPaths, type SweepMesh } from './sweep.ts';
+import { faceMeasurement } from './cadMeasure.ts';
 
 type Point = [number, number, number];
 type Tag = { face: cad.Face; owner: number; cap: boolean };
@@ -252,12 +253,34 @@ export function buildCadBody(
       sources: number[] = [],
       caps: number[] = [];
     const cadEdges: NonNullable<SweepMesh['cadEdges']> = [];
+    const cadFaces: NonNullable<SweepMesh['cadFaces']> = [];
+    // Curved tube faces may be NURBS rather than analytic cylinders. Preserve
+    // their known constant circular cross-section, separately from face geometry.
+    const faceDiameters = new Map<number, Set<number>>();
+    for (const tag of tags) {
+      if (tag.cap) continue;
+      const radii = paths[tag.owner].radii;
+      const diameter = radii.every((radius) => Math.abs(radius - radii[0]) < 1e-10) ? radii[0] * 2 : NaN;
+      const values = faceDiameters.get(tag.face.hashCode) ?? new Set<number>();
+      values.add(diameter);
+      faceDiameters.set(tag.face.hashCode, values);
+    }
     const bodyRanges: SweepMesh['bodyRanges'] = [],
       breps: string[] = [];
     const minRadius = Math.min(...paths.map((p) => Math.min(...p.radii)));
     // Chordal deflection controls only the preview, not the B-Rep or STEP precision.
     const deflection = Math.max(1e-5, Math.min(0.02, minRadius / 100));
     bodies.forEach((body, index) => {
+      facesOf(body).forEach((face, faceIndex) => {
+        const measurement = faceMeasurement(oc, face, index, faceIndex);
+        const values = faceDiameters.get(face.hashCode);
+        const diameter = values?.size === 1 ? [...values][0] : undefined;
+        if (measurement.diameter === undefined && diameter !== undefined && Number.isFinite(diameter)) {
+          measurement.diameter = diameter;
+          measurement.sweepDiameter = true;
+        }
+        cadFaces.push(measurement);
+      });
       const mesh = body.mesh({ tolerance: deflection, angularTolerance: 0.12 });
       const offset = positions.length / 3,
         start = indices.length;
@@ -303,6 +326,7 @@ export function buildCadBody(
       surfaceShell: removeCaps,
       cadBreps: breps,
       cadEdges,
+      cadFaces,
     };
   } catch (error) {
     if (error instanceof Error) throw error;

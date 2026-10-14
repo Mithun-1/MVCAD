@@ -58,6 +58,8 @@ import { ReferenceEditor } from './ReferenceEditor';
 import { readReference, type ReferenceAsset } from './references';
 import { RoundingIcon } from './RoundingIcon';
 import { ExportBody } from './ExportBody';
+import { MeasurePanel } from './MeasurePanel';
+import { pickedDistance, type MeasureSelection, type MeasureResult } from './measure';
 import { PartTitle } from './PartTitle';
 import { CurveEditor, type CurveDraft } from './CurveEditor';
 import { PointActions } from './PointActions';
@@ -204,6 +206,19 @@ export function App({ initial }: { initial: InitialWorkspace }) {
   const [sweep, setSweep] = useState<SweepMesh>();
   const [sweepError, setSweepError] = useState('');
   const [viewTool, setViewTool] = useState<ViewTool>(null);
+  const [measureActive, setMeasureActive] = useState(false);
+  const [measureSelections, setMeasureSelections] = useState<MeasureSelection[]>([]);
+  const [measureResult, setMeasureResult] = useState<MeasureResult>();
+  const [measurePending, setMeasurePending] = useState(false);
+  const [measureError, setMeasureError] = useState('');
+  const measureRequest = useRef(0);
+  const clearMeasurement = () => {
+    measureRequest.current++;
+    setMeasureSelections([]);
+    setMeasureResult(undefined);
+    setMeasurePending(false);
+    setMeasureError('');
+  };
   const [sectionViews, setSectionViews] = useState<ActiveSectionView[]>([]);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const sectionView = sectionViews.find((section) => section.id === editingSectionId);
@@ -280,6 +295,27 @@ export function App({ initial }: { initial: InitialWorkspace }) {
     return positions;
   }, [pointGeometry, curveGeometry, sweep, doc.autoSweep]);
   const [regeneration, setRegeneration] = useState(0);
+  useEffect(() => {
+    clearMeasurement();
+  }, [doc, sweep, measureActive, busy]);
+  useEffect(() => {
+    if (viewTool || form || pointForm || curveForm || filletForm || referenceForm) setMeasureActive(false);
+  }, [viewTool, !!form, !!pointForm, !!curveForm, !!filletForm, !!referenceForm]);
+  const selectMeasure = (selection: MeasureSelection | null, shift: boolean) => {
+    const next = selection
+      ? shift && measureSelections.length
+        ? [measureSelections[0], selection]
+        : [selection]
+      : [];
+    const request = ++measureRequest.current;
+    setMeasureSelections(next);
+    setMeasureError('');
+    setMeasureResult(undefined);
+    const native = next.length === 2 && next.some((item) => item.face);
+    setMeasurePending(native);
+    if (native) worker.current?.postMessage({ measureRequest: request, selections: next });
+    else if (next.length === 2) setMeasureResult(pickedDistance(next[0], next[1]));
+  };
   const [generationProgress, setGenerationProgress] = useState(0);
   const [notice, setNotice] = useState(initial.warning);
   const [saveState, setSaveState] = useState({
@@ -392,8 +428,19 @@ export function App({ initial }: { initial: InitialWorkspace }) {
         sweepError?: string;
         progress?: number;
         filletPreviewReady?: boolean;
+        measureRequest?: number;
+        result?: MeasureResult;
+        measureError?: string;
       }>,
     ) => {
+      if (event.data.measureRequest !== undefined) {
+        if (event.data.measureRequest === measureRequest.current) {
+          setMeasurePending(false);
+          setMeasureResult(event.data.result);
+          setMeasureError(event.data.measureError ?? '');
+        }
+        return;
+      }
       if (event.data.sequence !== sequence.current) return;
       if (event.data.progress !== undefined) {
         setGenerationProgress(event.data.progress);
@@ -826,6 +873,7 @@ export function App({ initial }: { initial: InitialWorkspace }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setMeasureActive(false);
         setTreeSelection(new Set());
         if (pointActions) {
           setPointActions(null);
@@ -1636,6 +1684,18 @@ export function App({ initial }: { initial: InitialWorkspace }) {
                 <Scan size={16} />
                 <span>Show Edges</span>
               </button>
+              <button
+                className="point-tool-trigger"
+                aria-pressed={measureActive}
+                disabled={!!form || !!pointForm || !!curveForm || !!filletForm || !!referenceForm}
+                onClick={() => {
+                  setViewTool(null);
+                  setMeasureActive((value) => !value);
+                }}
+              >
+                <Ruler size={16} />
+                <span>Measure</span>
+              </button>
             </div>
           </div>
           <span className="datum-group-title">View</span>
@@ -1831,8 +1891,22 @@ export function App({ initial }: { initial: InitialWorkspace }) {
           doc={displayDoc}
           sections={sectionViews}
           spacing={spacing}
+          measureActive={measureActive}
+          measureSelections={measureActive ? measureSelections : []}
+          measureResult={measureActive ? measureResult : undefined}
+          onMeasure={selectMeasure}
           viewControls={
             <>
+              {measureActive && (
+                <MeasurePanel
+                  selections={measureSelections}
+                  result={measureResult}
+                  pending={measurePending}
+                  error={measureError}
+                  onClear={clearMeasurement}
+                  onClose={() => setMeasureActive(false)}
+                />
+              )}
               <ViewControls
                 key={`${viewTool}-${doc.boundingBox?.planeIds.join()}`}
                 mode={viewTool}

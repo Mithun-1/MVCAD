@@ -5,6 +5,7 @@ import init from 'replicad-opencascadejs';
 import occtReader from 'occt-import-js';
 import * as cad from 'replicad';
 import { buildCadBody } from '../src/cadBody.ts';
+import { faceMeasurement, measureCadDistance } from '../src/cadMeasure.ts';
 import { exportCadStep } from '../src/stepExport.ts';
 import { newDocument, validateDocument } from '../src/model.ts';
 import { importStepCurves } from '../src/stepImport.ts';
@@ -168,4 +169,58 @@ test('exact spline guides and diameter transitions generate valid curved CAD sur
   assert.ok(shape.faces.some((f) => f.geomType === 'BSPLINE_SURFACE'));
   assert.ok(cad.measureVolume(shape) > 0);
   shape.delete();
+});
+
+test('Measure returns CAD face area, true diameter, and minimum face distances after serialization', () => {
+  const doc = fixture();
+  const mesh = buildCadBody(oc, doc, evaluate(doc), false);
+  const wall = mesh.cadFaces.find((face) => face.surface === 'CYLINDRE');
+  const caps = mesh.cadFaces.filter((face) => face.surface === 'PLANE');
+  assert.equal(caps.length, 2);
+  assert.ok(Math.abs(wall.diameter - 8) < 1e-8);
+  assert.ok(
+    Math.abs(
+      mesh.cadFaces.filter((face) => face.surface === 'CYLINDRE').reduce((sum, face) => sum + face.area, 0) -
+        2 * Math.PI * 4 * 60,
+    ) < 1e-6,
+  );
+  for (const cap of caps) {
+    assert.ok(Math.abs(cap.diameter - 8) < 1e-8);
+    assert.ok(Math.abs(cap.area - Math.PI * 16) < 1e-6);
+  }
+  const selection = (face) => ({ key: String(face.id), label: 'Face', position: [0, 0, 0], face });
+  const result = measureCadDistance(mesh.cadBreps, caps.map(selection));
+  assert.ok(Math.abs(result.distance - 60) < 1e-8);
+  assert.ok(Math.abs(Math.hypot(...result.from.map((v, i) => v - result.to[i])) - 60) < 1e-8);
+  const point = { key: 'point', label: 'Point', position: [10, 30, 0] };
+  assert.ok(Math.abs(measureCadDistance(mesh.cadBreps, [point, selection(wall)]).distance - 6) < 1e-8);
+  const shell = buildCadBody(oc, doc, evaluate(doc), true);
+  assert.ok(shell.cadFaces.every((face) => face.surface === 'CYLINDRE'));
+  assert.ok(Math.abs(shell.cadFaces[0].diameter - 8) < 1e-8);
+});
+
+test('Measure does not invent a diameter for an irregular planar face', () => {
+  const box = cad.makeBox([0, 0, 0], [3, 4, 5]);
+  const faces = box.faces;
+  try {
+    for (const [i, face] of faces.entries())
+      assert.equal(faceMeasurement(oc, face, 0, i).diameter, undefined);
+  } finally {
+    faces.forEach((face) => face.delete());
+    box.delete();
+  }
+});
+
+test('Measure retains constant cross-section diameter on curved NURBS vessel walls', () => {
+  const doc = fixture();
+  doc.pointSets[0].points[1].x = 15;
+  doc.curves[0].nodes.forEach((node) => (node.connection = 'spline'));
+  const mesh = buildCadBody(oc, doc, evaluate(doc), false);
+  const curved = mesh.cadFaces.filter((face) => face.surface === 'BSPLINE_SURFACE');
+  assert.ok(curved.length);
+  for (const face of curved) {
+    assert.equal(face.diameter, 8);
+    assert.equal(face.sweepDiameter, true);
+    assert.ok(face.area > 0);
+  }
 });
