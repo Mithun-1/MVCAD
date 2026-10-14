@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import rbcAnimation from './assets/regenerating-rbc.webp';
 import rbcStill from './assets/regenerating-rbc-still.png';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { Box, Expand, MousePointer2 } from 'lucide-react';
 import { BASE_PLANES, type Document, type EvaluatedPlane } from './model';
 import type { PointSet, EvaluatedPointSet } from './points';
@@ -177,7 +180,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     marker.width = marker.height = 32;
     const context = marker.getContext('2d')!;
     context.strokeStyle = '#fff';
-    context.lineWidth = 6;
+    context.lineWidth = 9;
     context.lineCap = 'round';
     context.beginPath();
     context.moveTo(6, 6);
@@ -548,8 +551,11 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
         };
       }
       ray.params.Line.threshold = ray.params.Points.threshold;
+      // Keep the same six-pixel pick radius with two-pixel screen-space curves.
+      ray.params.Line2 = { threshold: 10 };
       const curveHit = ray
         .intersectObjects(curves.children, true)
+        .map((hit) => ({ ...hit, point: hit.pointOnLine ?? hit.point }))
         .find((hit) => hit.object.userData.id && !hit.object.userData.preview && visible(hit.point));
       if (curveHit)
         return { id: curveHit.object.userData.id, object: curveHit.object, position: curveHit.point.clone() };
@@ -795,8 +801,8 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       const cloud = new THREE.Points(
         geometry,
         new THREE.PointsMaterial({
-          color: '#c46618',
-          size: props.selected === set.id || preview ? 14 : 11,
+          color: props.darkMode ? '#ffe600' : '#a84900',
+          size: props.selected === set.id || preview ? 15 : 12,
           sizeAttenuation: false,
           map: r.pointTexture,
           alphaTest: 0.5,
@@ -825,13 +831,16 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
             ),
           }));
       for (const piece of pieces) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(piece.positions, 3));
-        const line = new THREE.Line(
+        const geometry = new LineGeometry();
+        geometry.setPositions(new Float32Array(piece.positions));
+        const line = new Line2(
           geometry,
-          new THREE.LineBasicMaterial({
-            color: props.selected === piece.id ? '#e38a27' : props.darkMode ? '#78dfc4' : '#157c68',
+          new LineMaterial({
+            color: props.selected === piece.id ? '#e38a27' : props.darkMode ? '#5cffe0' : '#006b55',
+            linewidth: 2,
+            resolution: r.renderer.getSize(new THREE.Vector2()),
             depthTest: false,
+            depthWrite: false,
           }),
         );
         line.renderOrder = 11;
@@ -860,7 +869,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       const markers = new THREE.Points(
         geometry,
         new THREE.PointsMaterial({
-          color: '#c46618',
+          color: props.darkMode ? '#ffe600' : '#a84900',
           size: 17,
           sizeAttenuation: false,
           map: r.pointTexture,
