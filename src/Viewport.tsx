@@ -56,6 +56,7 @@ type Runtime = {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   controls: OrbitControls;
+  resetOrbitFrame: () => void;
   planes: THREE.Group;
   points: THREE.Group;
   curves: THREE.Group;
@@ -98,6 +99,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     r.controls.target.copy(center);
     r.camera.position.copy(center).addScaledVector(vector(plane.frame.slice(9, 12)), 500);
     r.camera.up.copy(vector(plane.frame.slice(6, 9)));
+    r.resetOrbitFrame();
     r.camera.far = 10000;
     r.camera.updateProjectionMatrix();
     r.controls.update();
@@ -111,6 +113,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       r.camera.clearViewOffset();
       r.camera.up.set(0, 1, 0);
       r.camera.position.copy(r.controls.target).add(new THREE.Vector3(280, 220, 280));
+      r.resetOrbitFrame();
       r.controls.update();
       r.render();
       setActiveView(name);
@@ -140,11 +143,19 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-200, 200, 200, -200, 0.1, 10000);
     camera.position.set(280, 220, 280);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = false;
-    controls.minZoom = 0.000001;
-    controls.maxZoom = 100;
-    controls.zoomSpeed = 1.15;
+    const makeControls = (target = new THREE.Vector3()) => {
+      const position = camera.position.clone();
+      const next = new OrbitControls(camera, renderer.domElement);
+      next.enableDamping = false;
+      next.minZoom = 0.000001;
+      next.maxZoom = 100;
+      next.zoomSpeed = 1.15;
+      camera.position.copy(position);
+      next.target.copy(target);
+      next.update();
+      return next;
+    };
+    let controls = makeControls();
     const planes = new THREE.Group();
     scene.add(planes);
     const points = new THREE.Group();
@@ -337,6 +348,18 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       scene,
       camera,
       controls,
+      resetOrbitFrame: () => {
+        // OrbitControls captures camera.up at construction. Recreate it when a
+        // standard/plane view changes that axis, rather than retaining a stale frame.
+        const target = controls.target.clone();
+        controls.removeEventListener('change', render);
+        controls.removeEventListener('start', onStart);
+        controls.dispose();
+        controls = makeControls(target);
+        controls.addEventListener('change', render);
+        controls.addEventListener('start', onStart);
+        if (runtime.current) runtime.current.controls = controls;
+      },
       planes,
       points,
       curves,
