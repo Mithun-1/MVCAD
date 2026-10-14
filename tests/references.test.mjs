@@ -2,6 +2,44 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_REFERENCE_BYTES, readReference, validateReference } from '../src/references.ts';
 import { newDocument, validateDocument, descendants } from '../src/model.ts';
+import { Vector3 } from 'three';
+import { referenceTransformMatrix } from '../src/referenceTransform.ts';
+
+test('reference transforms swap imported axes, rotate in world XYZ order, and translate without changing vertices', () => {
+  const transform = { axes: [2, 1, 0], rotation: [90, 0, 90], translation: [10, 20, 30] };
+  // (1,2,3) -> (3,2,1) -> (3,-1,2) -> (1,3,2) -> (11,23,32).
+  const matrix = referenceTransformMatrix(transform);
+  const actual = new Vector3(1, 2, 3).applyMatrix4(matrix).toArray();
+  actual.forEach((v, i) => assert.ok(Math.abs(v - [11, 23, 32][i]) < 1e-10));
+  assert.ok(Math.abs(matrix.determinant() + 1) < 1e-10);
+  assert.deepEqual(new Vector3(1, 2, 3).applyMatrix4(referenceTransformMatrix()).toArray(), [1, 2, 3]);
+  const asset = {
+    id: 'stl',
+    name: 'STL',
+    kind: 'stl',
+    visible: true,
+    opacity: 0.6,
+    positions: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    transform,
+  };
+  const doc = newDocument();
+  doc.references = [asset];
+  assert.deepEqual(validateDocument(JSON.parse(JSON.stringify(doc))).references, [asset]);
+  assert.equal(validateReference(asset, new Set()).positions, asset.positions);
+  for (const change of [
+    null,
+    {},
+    { ...transform, axes: [0, 0, 2] },
+    { ...transform, axes: [0, 1, 3] },
+    { ...transform, rotation: [0, NaN, 0] },
+    { ...transform, translation: [Infinity, 0, 0] },
+    { ...transform, translation: [0, 0] },
+  ])
+    assert.throws(
+      () => validateReference({ ...asset, transform: change }, new Set()),
+      /Invalid reference transform/,
+    );
+});
 
 test('reference size guard accepts 1 GB and rejects larger files before reading', async () => {
   assert.equal(MAX_REFERENCE_BYTES, 1073741824);

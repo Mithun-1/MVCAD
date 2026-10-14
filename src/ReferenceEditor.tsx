@@ -1,6 +1,6 @@
-import { X } from 'lucide-react';
+import { ArrowLeftRight, X } from 'lucide-react';
 import { planeName, type Document, type EvaluatedPlane } from './model';
-import { validateReference, type ReferenceAsset } from './references';
+import { identityReferenceTransform, validateReference, type ReferenceAsset } from './references';
 
 export function ReferenceEditor({
   asset,
@@ -30,6 +30,7 @@ export function ReferenceEditor({
     error = (e as Error).message;
   }
   const frame = asset.kind === 'image' ? geometry.find((p) => p.id === asset.planeId)?.frame : undefined;
+  const transform = asset.kind === 'stl' ? (asset.transform ?? identityReferenceTransform()) : undefined;
   return (
     <form
       className="reference-editor"
@@ -57,6 +58,73 @@ export function ReferenceEditor({
             onChange={(e) => onChange({ ...asset, opacity: Number(e.target.value) / 100 })}
           />
         </label>
+        {asset.kind === 'stl' && transform && (
+          <div className="reference-transform-tools">
+            <h4>Swap coordinates</h4>
+            <div className="reference-axis-swaps">
+              {(
+                [
+                  [0, 1],
+                  [0, 2],
+                  [1, 2],
+                ] as const
+              ).map(([a, b]) => (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  key={`${a}${b}`}
+                  aria-label={`Swap reference ${'XYZ'[a]} and ${'XYZ'[b]}`}
+                  onClick={() => {
+                    const axes = [...transform.axes] as [number, number, number];
+                    [axes[a], axes[b]] = [axes[b], axes[a]];
+                    onChange({ ...asset, transform: { ...transform, axes } });
+                  }}
+                >
+                  {'XYZ'[a]} <ArrowLeftRight size={12} /> {'XYZ'[b]}
+                </button>
+              ))}
+            </div>
+            <p className="field-hint">
+              Imported axes: {transform.axes.map((axis, i) => `${'XYZ'[i]} ← ${'XYZ'[axis]}`).join(', ')}
+            </p>
+            {(['rotation', 'translation'] as const).map((kind) => (
+              <div key={kind}>
+                <h4>{kind === 'rotation' ? 'Rotate (degrees)' : 'Translate (model units)'}</h4>
+                <div className="reference-transform-inputs">
+                  {([0, 1, 2] as const).map((axis) => (
+                    <label key={axis}>
+                      {'XYZ'[axis]}
+                      <input
+                        type="number"
+                        step="any"
+                        required
+                        min="-1000000"
+                        max="1000000"
+                        aria-label={`Reference ${kind} ${'XYZ'[axis]}`}
+                        value={Number.isFinite(transform[kind][axis]) ? transform[kind][axis] : ''}
+                        onChange={(e) => {
+                          const values = [...transform[kind]] as [number, number, number];
+                          values[axis] = e.target.value ? Number(e.target.value) : NaN;
+                          onChange({ ...asset, transform: { ...transform, [kind]: values } });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="field-hint">
+              Swap imported axes, rotate around the model origin in X → Y → Z order, then translate.
+            </p>
+            <button
+              type="button"
+              className="wide-button"
+              onClick={() => onChange({ ...asset, transform: identityReferenceTransform() })}
+            >
+              Reset placement
+            </button>
+          </div>
+        )}
         {asset.kind === 'image' && (
           <>
             <label>

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { EvaluatedPlane } from './model';
 import type { ReferenceAsset } from './references';
+import { referenceTransformMatrix } from './referenceTransform';
 
 export function referenceObjects(
   group: THREE.Group,
@@ -24,6 +25,7 @@ export function referenceObjects(
     let geometry: THREE.BufferGeometry, material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
     const matrix = new THREE.Matrix4();
     if (asset.kind === 'stl') {
+      matrix.copy(referenceTransformMatrix(asset.transform));
       geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(asset.positions, 3));
       geometry.computeVertexNormals();

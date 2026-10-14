@@ -4,9 +4,34 @@ const MAX_REFERENCE_COORDINATES = Math.floor((MAX_REFERENCE_BYTES - 84) / 50) * 
 const MAX_REFERENCE_DATA_URL_LENGTH = 4 * Math.ceil(MAX_REFERENCE_BYTES / 3) + 64;
 
 type Common = { id: string; name: string; visible: boolean; opacity: number };
+export type ReferenceTransform = {
+  axes: [number, number, number];
+  rotation: [number, number, number];
+  translation: [number, number, number];
+};
+export const identityReferenceTransform = (): ReferenceTransform => ({
+  axes: [0, 1, 2],
+  rotation: [0, 0, 0],
+  translation: [0, 0, 0],
+});
+export function validReferenceTransform(t: ReferenceTransform): boolean {
+  return (
+    !!t &&
+    Array.isArray(t.axes) &&
+    t.axes.length === 3 &&
+    new Set(t.axes).size === 3 &&
+    t.axes.every((v) => Number.isInteger(v) && v >= 0 && v <= 2) &&
+    [t.rotation, t.translation].every(
+      (values) =>
+        Array.isArray(values) &&
+        values.length === 3 &&
+        values.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1000000),
+    )
+  );
+}
 export type ReferenceAsset = Common &
   (
-    | { kind: 'stl'; positions: number[] }
+    | { kind: 'stl'; positions: number[]; transform?: ReferenceTransform }
     | {
         kind: 'image';
         dataUrl: string;
@@ -41,8 +66,26 @@ export function validateReference(asset: ReferenceAsset, planeIds: Set<string>):
     asset.positions.length <= MAX_REFERENCE_COORDINATES &&
     asset.positions.length % 9 === 0 &&
     asset.positions.every((v) => Number.isFinite(v) && Math.abs(v) <= 1000000)
-  )
-    return { ...common, kind: 'stl', positions: asset.positions };
+  ) {
+    if (asset.transform !== undefined && !validReferenceTransform(asset.transform))
+      throw new Error(
+        'Invalid reference transform. Enter finite rotations and translations within ±1,000,000.',
+      );
+    return {
+      ...common,
+      kind: 'stl',
+      positions: asset.positions,
+      ...(asset.transform
+        ? {
+            transform: {
+              axes: [...asset.transform.axes],
+              rotation: [...asset.transform.rotation],
+              translation: [...asset.transform.translation],
+            },
+          }
+        : {}),
+    };
+  }
   if (
     asset.kind === 'image' &&
     typeof asset.dataUrl === 'string' &&

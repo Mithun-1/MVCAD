@@ -2392,6 +2392,34 @@ dd {
   padding-top: 4px;
   padding-bottom: 4px;
 }
+.reference-transform-tools h4 {
+  font-size: 12px;
+  font-weight: 500;
+  margin: 16px 0 8px;
+}
+.reference-axis-swaps {
+  display: flex;
+  gap: 6px;
+}
+.reference-axis-swaps button {
+  flex: 1;
+  padding: 6px;
+  gap: 6px;
+}
+.reference-transform-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.reference-transform-inputs label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+}
+.reference-transform-inputs input {
+  width: 100%;
+  min-width: 0;
+}
 .reference-dimensions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
