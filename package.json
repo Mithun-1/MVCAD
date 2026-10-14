@@ -1,0 +1,50 @@
+{
+  "name": "mvcad",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "build:engine": "node scripts/build-engine.mjs",
+    "test:engine": "node --test tests/engine.test.mjs tests/model.test.mjs tests/groups.test.mjs tests/points.test.mjs tests/displayBounds.test.mjs tests/curves.test.mjs tests/stepImport.test.mjs tests/viewTools.test.mjs tests/sweep.test.mjs tests/sweepCache.test.mjs tests/sweepPool.test.mjs tests/smoothJunctionMesh.test.mjs tests/orbitPivot.test.mjs tests/cadBody.test.mjs tests/references.test.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run test:engine && npm run test:e2e",
+    "format": "prettier --write src scripts tests *.json *.ts README.md index.html",
+    "bench:sweep": "node scripts/bench-sweep.mjs",
+    "desktop": "npm run build && electron .",
+    "desktop:pack": "npm run build && electron-builder --dir --publish never",
+    "desktop:win": "npm run build && electron-builder --win --x64 --publish never",
+    "desktop:mac": "npm run build && electron-builder --mac --publish never",
+    "test:desktop": "node --test tests/desktop.test.mjs && node scripts/test-desktop.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "replicad": "1.1.0",
+    "replicad-opencascadejs": "1.1.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.183.0",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "occt-import-js": "0.0.23",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3",
+    "vite": "8.3.2"
+  },
+  "description": "MVCAD desktop and browser workspace for vascular CAD modeling",
+  "author": "Mithun-1",
+  "main": "desktop/main.cjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mithun-1/MVCAD.git"
+  }
+}

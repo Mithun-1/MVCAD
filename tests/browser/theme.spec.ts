@@ -1,0 +1,39 @@
+import { test, expect } from '@playwright/test';
+
+test('dark mode persists and can switch during editing without changing the document', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
+  const toggle = page.getByRole('button', { name: 'Dark mode', exact: true });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  const savedDocument = await page.evaluate(() => localStorage.getItem('mvcad.document.v1'));
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('.toolbar')).toHaveCSS('background-color', 'rgb(12, 12, 12)');
+  await page.screenshot({ path: 'test-results/dark-workspace.png' });
+  await page.reload();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => localStorage.getItem('mvcad.document.v1'))).toBe(savedDocument);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+
+  await page.getByRole('treeitem', { name: 'Front Plane', exact: true }).click({ button: 'right' });
+  await expect(page.getByRole('menu')).toHaveCSS('background-color', 'rgb(12, 12, 12)');
+  await page.getByRole('menuitem', { name: 'Create reference plane', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Draft plane');
+  await page.screenshot({ path: 'test-results/dark-plane-editor.png' });
+  await toggle.click();
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Draft plane');
+  await expect(page.locator('.toolbar')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await toggle.click();
+  await page.getByRole('button', { name: 'Point', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Offset Coordinate System', exact: true }).click();
+  await page.getByLabel('Point 1 X', { exact: true }).fill('45');
+  await expect(page.locator('.point-table-scroll')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  await page.screenshot({ path: 'test-results/dark-point-editor.png' });
+  await toggle.click();
+  await expect(page.getByLabel('Point 1 X', { exact: true })).toHaveValue('45');
+  await page.reload();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => localStorage.getItem('mvcad.document.v1'))).toBe(savedDocument);
+});
