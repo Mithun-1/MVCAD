@@ -20,6 +20,44 @@
   place-items: center;
   height: 100vh;
 }
+.curve-selection-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 14px;
+  font-size: 11px;
+}
+.curve-selection-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.curve-selection-key i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+.curve-start-key {
+  background: #00854b;
+  transform: rotate(45deg);
+}
+.curve-point-key {
+  background: #0067c5;
+  border-radius: 50%;
+}
+.curve-active-key {
+  border: 2px solid #ba4a00;
+  border-radius: 50%;
+}
+[data-theme='dark'] .curve-start-key {
+  background: #40f59b;
+}
+[data-theme='dark'] .curve-point-key {
+  background: #00dcff;
+}
+[data-theme='dark'] .curve-active-key {
+  border-color: #ffac36;
+}
 .storage-trigger {
   font-size: inherit;
   padding: 3px 6px;

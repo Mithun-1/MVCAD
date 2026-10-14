@@ -68,11 +68,30 @@ type Runtime = {
   references: THREE.Group;
   referenceTextures: Map<string, THREE.Texture>;
   pointTexture: THREE.CanvasTexture;
+  curveMarkerTextures: Record<'dot' | 'diamond' | 'ring', THREE.CanvasTexture>;
   render: () => void;
   fit: () => void;
   clearHover: () => void;
 };
 const vector = (a: number[]) => new THREE.Vector3(a[0], a[1], a[2]);
+function curveMarkerTexture(shape: 'dot' | 'diamond' | 'ring') {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  context.fillStyle = context.strokeStyle = '#fff';
+  context.lineWidth = 6;
+  context.beginPath();
+  if (shape === 'diamond') {
+    context.moveTo(32, 5);
+    context.lineTo(59, 32);
+    context.lineTo(32, 59);
+    context.lineTo(5, 32);
+    context.closePath();
+  } else context.arc(32, 32, 26, 0, Math.PI * 2);
+  if (shape === 'ring') context.stroke();
+  else context.fill();
+  return new THREE.CanvasTexture(canvas);
+}
 function disposeObject(group: THREE.Object3D) {
   group.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -189,6 +208,11 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     context.lineTo(6, 26);
     context.stroke();
     const pointTexture = new THREE.CanvasTexture(marker);
+    const curveMarkerTextures = {
+      dot: curveMarkerTexture('dot'),
+      diamond: curveMarkerTexture('diamond'),
+      ring: curveMarkerTexture('ring'),
+    };
     const axes = new THREE.AxesHelper(25);
     axes.setColors(0xc96765, 0x669473, 0x5984bd);
     scene.add(axes);
@@ -371,6 +395,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       references,
       referenceTextures,
       pointTexture,
+      curveMarkerTextures,
       render,
       fit,
       clearHover,
@@ -631,6 +656,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       referenceTextures.forEach((texture) => texture.dispose());
       referenceTextures.clear();
       pointTexture.dispose();
+      Object.values(curveMarkerTextures).forEach((texture) => texture.dispose());
       renderer.dispose();
       renderer.domElement.remove();
       runtime.current = null;
@@ -850,36 +876,63 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       }
     }
     const resolve = createPointResolver(props.doc);
-    const highlight = [...(props.curveNodes ?? []).map((n) => n.point), props.pickedPoint]
-      .filter(
-        (ref) =>
-          ref && visibleSetIds.has(ref.setId) && props.pointGeometry.some((set) => set.id === ref.setId),
-      )
-      .map((ref) => resolve(ref))
-      .filter((p) => p !== undefined);
-    if (highlight.length) {
+    const markerPoint = (ref: PointReference | null) =>
+      ref && visibleSetIds.has(ref.setId) && props.pointGeometry.some((set) => set.id === ref.setId)
+        ? resolve(ref)
+        : undefined;
+    const curvePoints = (props.curveNodes ?? []).map((node) => markerPoint(node.point)).filter((p) => !!p);
+    const activePoint = markerPoint(props.pickedPoint);
+    const addMarkers = (
+      positions: number[],
+      shape: 'dot' | 'diamond' | 'ring',
+      size: number,
+      color: string,
+      order: number,
+    ) => {
+      if (!positions.length) return;
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute(
-        'position',
-        new THREE.Float32BufferAttribute(
-          highlight.flatMap((p) => [p.x, p.y, p.z]),
-          3,
-        ),
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      // Contrasting outlines keep markers legible over points, vessels, and references.
+      for (const [index, [width, tint]] of [
+        [size + 5, '#111111'],
+        [size + 2, '#ffffff'],
+        [size, color],
+      ].entries()) {
+        const markers = new THREE.Points(
+          geometry,
+          new THREE.PointsMaterial({
+            color: tint as string,
+            size: width as number,
+            sizeAttenuation: false,
+            map: r.curveMarkerTextures[shape],
+            alphaTest: 0.5,
+            depthTest: false,
+            depthWrite: false,
+          }),
+        );
+        markers.renderOrder = order + index;
+        // No pick ID: these overlays must not intercept clicks on the source points.
+        r.points.add(markers);
+      }
+    };
+    addMarkers(
+      curvePoints.flatMap((p) => [p.x, p.y, p.z]),
+      'dot',
+      11,
+      props.darkMode ? '#00dcff' : '#0067c5',
+      22,
+    );
+    const start = curvePoints[0];
+    if (start)
+      addMarkers([start.x, start.y, start.z], 'diamond', 19, props.darkMode ? '#40f59b' : '#00854b', 25);
+    if (activePoint)
+      addMarkers(
+        [activePoint.x, activePoint.y, activePoint.z],
+        'ring',
+        30,
+        props.darkMode ? '#ffac36' : '#ba4a00',
+        28,
       );
-      const markers = new THREE.Points(
-        geometry,
-        new THREE.PointsMaterial({
-          color: props.darkMode ? '#ffe600' : '#a84900',
-          size: 17,
-          sizeAttenuation: false,
-          map: r.pointTexture,
-          alphaTest: 0.5,
-          depthTest: false,
-        }),
-      );
-      markers.renderOrder = 13;
-      r.points.add(markers);
-    }
     const origin = r.scene.children.find((o) => o.userData.id === 'origin') as THREE.Mesh;
     (origin.material as THREE.MeshBasicMaterial).color.set(
       props.darkMode

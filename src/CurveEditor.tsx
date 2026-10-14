@@ -100,6 +100,20 @@ export function CurveEditor({ doc, draft, onChange, onSave, onCancel, busy, engi
             ? `Click a point in the workspace for row ${active + 1}.`
             : 'Click points in the workspace to extend the curve.'}
         </p>
+        <div className="curve-selection-key" aria-label="Curve point markers">
+          <span>
+            <i className="curve-start-key" aria-hidden="true" />
+            Start
+          </span>
+          <span>
+            <i className="curve-point-key" aria-hidden="true" />
+            In curve
+          </span>
+          <span>
+            <i className="curve-active-key" aria-hidden="true" />
+            Active
+          </span>
+        </div>
         <div className="curve-controls">
           <div className="curve-point-list" role="listbox" aria-label="Curve points">
             {feature.nodes.map((entry, index) => (
