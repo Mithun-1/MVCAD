@@ -40,6 +40,8 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState('');
   const [importError, setImportError] = useState('');
+  const [translation, setTranslation] = useState({ x: '0', y: '0', z: '0' });
+  const [translationError, setTranslationError] = useState('');
   const importInput = useRef<HTMLInputElement>(null);
   const csvWorker = useRef<Worker | null>(null);
   useEffect(() => () => csvWorker.current?.terminate(), []);
@@ -135,6 +137,37 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
       `Swapped ${a.toUpperCase()} and ${b.toUpperCase()} for all ${draft.rows.length.toLocaleString()} points.`,
     );
   };
+  const translateAll = () => {
+    try {
+      const delta = {
+        x: coordinate(translation.x),
+        y: coordinate(translation.y),
+        z: coordinate(translation.z),
+      };
+      // Validate the entire set before changing any row, including skipped points and other pages.
+      const rows = draft.rows.map((row, index) => {
+        try {
+          return {
+            ...row,
+            x: String(coordinate(String(coordinate(row.x) + delta.x))),
+            y: String(coordinate(String(coordinate(row.y) + delta.y))),
+            z: String(coordinate(String(coordinate(row.z) + delta.z))),
+          };
+        } catch (error) {
+          throw new Error(`Point ${index + 1}: ${(error as Error).message}`);
+        }
+      });
+      if (delta.x || delta.y || delta.z) pristine.current = false;
+      setDraft((d) => ({ ...d, rows }));
+      setTranslation({ x: '0', y: '0', z: '0' });
+      setTranslationError('');
+      setMessage(
+        `Translated all ${rows.length.toLocaleString()} points by (${delta.x}, ${delta.y}, ${delta.z}).`,
+      );
+    } catch (error) {
+      setTranslationError((error as Error).message);
+    }
+  };
 
   return (
     <form
@@ -226,6 +259,43 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
             {b.toUpperCase()}
           </button>
         ))}
+      </div>
+      <div className="point-translation-tools" role="group" aria-label="Translate all points">
+        <span>Translate all</span>
+        {(['x', 'y', 'z'] as const).map((axis) => (
+          <label key={axis}>
+            Δ{axis.toUpperCase()}
+            <input
+              aria-label={`Translate ${axis.toUpperCase()}`}
+              inputMode="decimal"
+              value={translation[axis]}
+              disabled={importing}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  translateAll();
+                }
+              }}
+              onChange={(e) => {
+                setTranslation((value) => ({ ...value, [axis]: e.target.value }));
+                setTranslationError('');
+              }}
+            />
+          </label>
+        ))}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={importing || !draft.rows.length}
+          onClick={translateAll}
+        >
+          Translate
+        </button>
+        {translationError && (
+          <p className="form-error" role="alert">
+            {translationError}
+          </p>
+        )}
       </div>
       <div className="point-table-scroll">
         <table className="point-table">
