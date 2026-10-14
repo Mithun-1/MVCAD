@@ -31,7 +31,8 @@ function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(tx.error ?? new Error('Project save was interrupted.'));
-    tx.onerror = () => reject(tx.error ?? new Error('Browser storage failed.'));
+    tx.onerror = (event) =>
+      reject((event.target as IDBRequest)?.error ?? tx.error ?? new Error('Browser storage failed.'));
   });
 }
 export function saveProject(doc: Document): Promise<void> {

@@ -31,7 +31,7 @@ export async function readSavedDocument(page) {
       const asset = assets.get(ref.assetId);
       delete ref.assetId;
       if (ref.kind === 'stl') {
-        const buffer = await asset.data.arrayBuffer();
+        const buffer = asset.data instanceof Blob ? await asset.data.arrayBuffer() : asset.data;
         ref.positions = Array.from(
           asset.encoding === 'f32' ? new Float32Array(buffer) : new Float64Array(buffer),
         );
@@ -39,7 +39,9 @@ export async function readSavedDocument(page) {
         ref.dataUrl = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
-          reader.readAsDataURL(asset.data);
+          reader.readAsDataURL(
+            asset.data instanceof Blob ? asset.data : new Blob([asset.data], { type: asset.mimeType }),
+          );
         });
       }
     }

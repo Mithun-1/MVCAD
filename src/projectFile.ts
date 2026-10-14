@@ -1,5 +1,12 @@
 import { validateDocument, type Document } from './model.ts';
-import { packProject, unpackProject, type AssetData, type StoredProject } from './projectAssets.ts';
+import {
+  packProject,
+  unpackProject,
+  assetSize,
+  assetType,
+  type AssetData,
+  type StoredProject,
+} from './projectAssets.ts';
 
 const MAGIC = 'MVCAD2\r\n';
 const MAX_METADATA = 50_000_000;
@@ -9,11 +16,11 @@ export async function exportProjectFile(doc: Document): Promise<Blob> {
   const metadata = new TextEncoder().encode(
     JSON.stringify({
       project,
-      assets: assets.map(({ id, encoding, data }) => ({
-        id,
-        encoding,
-        size: data.size,
-        type: data.type,
+      assets: assets.map((asset) => ({
+        id: asset.id,
+        encoding: asset.encoding,
+        size: assetSize(asset),
+        type: assetType(asset),
       })),
     }),
   );

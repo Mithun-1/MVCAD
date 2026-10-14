@@ -505,8 +505,9 @@ export function App({ initial }: { initial: InitialWorkspace }) {
           setSaveState({ doc, status: 'Saved locally' });
           setNotice((previous) => (previous === SAVE_ERROR || previous === initial.warning ? '' : previous));
         })
-        .catch(() => {
+        .catch((error) => {
           if (cancelled) return;
+          console.error('Project autosave failed:', error);
           setSaveState({ doc, status: 'Not saved' });
           setNotice(SAVE_ERROR);
         });

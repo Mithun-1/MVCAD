@@ -27,6 +27,9 @@ try {
     try {
       const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
       const errors = [];
+      page.on('console', (message) => {
+        if (message.type() === 'error') console.error(`${name}: ${message.text()}`);
+      });
       page.on('pageerror', (error) => errors.push(error.message));
       page.on('response', (response) => {
         if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);

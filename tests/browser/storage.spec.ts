@@ -15,7 +15,11 @@ async function snapshot(page: Page) {
       tx.oncomplete = () =>
         resolve({
           project: p.result,
-          assets: a.result.map((v: any) => ({ id: v.id, size: v.data.size, encoding: v.encoding })),
+          assets: a.result.map((v: any) => ({
+            id: v.id,
+            size: v.data instanceof Blob ? v.data.size : v.data.byteLength,
+            encoding: v.encoding,
+          })),
         });
       tx.onerror = () => reject(tx.error);
     });
