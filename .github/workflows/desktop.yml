@@ -25,6 +25,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node -e "const v=require('./package.json').version; if(process.env.GITHUB_REF_NAME!=='v'+v) throw Error('Release tag must match package.json version')"
       - run: npx install-electron --no
       - run: npm run test:engine
       - run: npm run build
@@ -33,12 +36,34 @@ jobs:
         run: npx electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: node scripts/verify-update-artifacts.mjs
+      - name: Verify Mac app signature and disk image
+        if: matrix.target == 'mac'
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/MVCAD.app
+          codesign -dv --verbose=4 release/mac-arm64/MVCAD.app
+          mkdir -p "$RUNNER_TEMP/mvcad-dmg"
+          hdiutil attach release/MVCAD-arm64.dmg -mountpoint "$RUNNER_TEMP/mvcad-dmg" -nobrowse -readonly
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/mvcad-dmg/MVCAD.app"
+          DESKTOP_EXECUTABLE="$RUNNER_TEMP/mvcad-dmg/MVCAD.app/Contents/MacOS/MVCAD" npm run test:desktop
+          hdiutil detach "$RUNNER_TEMP/mvcad-dmg"
+      - name: Test packaged Windows app
+        if: matrix.target == 'win'
+        run: |
+          $env:DESKTOP_EXECUTABLE = Join-Path $PWD 'release/win-unpacked/MVCAD.exe'
+          npm run test:desktop
+          node scripts/test-updater-download.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: MVCAD-${{ matrix.target }}-${{ matrix.arch }}
           path: |
             release/*.exe
             release/*.dmg
+            release/*.zip
+            release/*.yml
+            release/*.blockmap
+            !release/builder-debug.yml
+            !release/builder-effective-config.yaml
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -51,9 +76,11 @@ jobs:
         with:
           path: installers
           merge-multiple: true
-      - name: Publish preview release
+      - name: Publish latest release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" installers/* --prerelease --title "MVCAD $RELEASE_TAG" --notes "Windows x64 installer and macOS Apple Silicon disk image. On macOS, drag MVCAD into Applications. These preview builds are unsigned and not notarized; operating-system security prompts apply."
+        run: |
+          gh release create "$RELEASE_TAG" installers/* --draft --title "MVCAD $RELEASE_TAG" --notes "Windows: MVCAD.exe installer with in-app update checks, download progress, and restart-to-update. Mac: MVCAD-arm64.dmg; drag MVCAD into Applications. Mac updates currently use manual downloads until Apple Developer ID signing is configured. The Mac bundle has a verified local integrity signature but is not Apple-notarized. Windows is unsigned. Existing 0.1.0 installs require one manual installation to gain the update button."
+          gh release edit "$RELEASE_TAG" --draft=false --latest

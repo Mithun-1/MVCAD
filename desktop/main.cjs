@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Menu, protocol, net, session } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, session, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { assetPath, CSP } = require('./protocol.cjs');
+const { createUpdates } = require('./updates.cjs');
 
 app.setName('MVCAD');
 if (process.env.MVCAD_USER_DATA) app.setPath('userData', path.resolve(process.env.MVCAD_USER_DATA));
@@ -19,7 +20,13 @@ function createWindow() {
     backgroundColor: '#000000',
     icon: path.join(__dirname, '../build/icon.png'),
     show: false,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => {
@@ -41,6 +48,43 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(() => {
+    const { autoUpdater } = require('electron-updater');
+    const updates = createUpdates({
+      updater: autoUpdater,
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      platform: process.platform,
+      notify: (state) =>
+        BrowserWindow.getAllWindows().forEach((window) =>
+          window.webContents.send('mvcad:update-status', state),
+        ),
+      openDownload: () =>
+        shell.openExternal('https://github.com/Mithun-1/MVCAD/releases/latest/download/MVCAD-arm64.dmg'),
+      install: () => {
+        setImmediate(() => autoUpdater.quitAndInstall(false, true));
+      },
+    });
+    for (const [channel, handler] of Object.entries({
+      'mvcad:update-state': updates.state,
+      'mvcad:update-check': updates.check,
+      'mvcad:update-download': updates.download,
+      'mvcad:update-install': updates.install,
+    }))
+      ipcMain.handle(channel, (event) => {
+        if (
+          event.senderFrame !== event.sender.mainFrame ||
+          !['mvcad://app/', 'mvcad://app/index.html'].includes(event.senderFrame.url)
+        )
+          throw new Error('Untrusted update request.');
+        return handler();
+      });
+    // Check quietly; never download or restart without the user's button click.
+    if (app.isPackaged) {
+      const timer = setTimeout(() => updates.check(), 15000);
+      timer.unref();
+      const interval = setInterval(() => updates.check(), 4 * 60 * 60 * 1000);
+      interval.unref();
+    }
     app.setAppUserModelId('com.mithun.mvcad');
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);

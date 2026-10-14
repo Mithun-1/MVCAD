@@ -5,7 +5,7 @@
     "output": "release",
     "buildResources": "build"
   },
-  "files": ["dist/**/*", "desktop/**/*", "build/icon.png", "package.json", "!node_modules/**/*"],
+  "files": ["dist/**/*", "desktop/**/*", "build/icon.png", "package.json"],
   "asar": true,
   "npmRebuild": false,
   "artifactName": "MVCAD-${version}-${os}-${arch}.${ext}",
@@ -16,7 +16,8 @@
         "arch": ["x64"]
       }
     ],
-    "icon": "build/icon.ico"
+    "icon": "build/icon.ico",
+    "artifactName": "MVCAD.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -31,11 +32,19 @@
       {
         "target": "dmg",
         "arch": ["arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["arm64"]
       }
     ],
     "category": "public.app-category.graphics-design",
     "icon": "build/icon.png",
-    "hardenedRuntime": true
+    "hardenedRuntime": true,
+    "artifactName": "MVCAD-arm64.${ext}",
+    "identity": "-",
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist"
   },
   "dmg": {
     "contents": [
@@ -51,7 +60,12 @@
       }
     ]
   },
-  "publish": null,
+  "publish": {
+    "provider": "github",
+    "owner": "Mithun-1",
+    "repo": "MVCAD",
+    "releaseType": "release"
+  },
   "extraResources": [
     {
       "from": "THIRD_PARTY_NOTICES.md",

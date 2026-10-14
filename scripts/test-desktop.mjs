@@ -26,6 +26,23 @@ try {
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible({ timeout: 60000 });
   expect(page.url()).toBe('mvcad://app/');
   expect(await page.evaluate(() => typeof window.require)).toBe('undefined');
+  expect(await page.evaluate(() => typeof window.mvcadDesktop?.checkForUpdates)).toBe('function');
+  await expect(page.getByRole('button', { name: 'Check app updates', exact: true })).toBeVisible();
+  await desktop.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('mvcad:update-status', {
+      status: 'available',
+      currentVersion: '0.1.1',
+      version: '0.2.0',
+      percent: 0,
+      manual: process.platform === 'darwin',
+      message: '',
+    });
+  });
+  await page.getByRole('button', { name: 'App update available', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'App updates', exact: true })).toContainText(
+    'Version 0.2.0 is available.',
+  );
+  await page.getByRole('button', { name: 'Close app updates', exact: true }).click();
   const doc = newDocument();
   doc.name = 'Desktop smoke test';
   doc.autoSweep = true;

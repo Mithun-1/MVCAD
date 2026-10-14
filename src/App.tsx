@@ -54,6 +54,7 @@ import { ViewControls, SectionSliders, type ViewTool } from './ViewControls';
 import { boxDimensions, measureBoxSpacing, type ActiveSectionView } from './viewTools';
 import { PointEditor } from './PointEditor';
 import { FilletEditor } from './FilletEditor';
+import { DesktopUpdates } from './DesktopUpdates';
 import { ReferenceEditor } from './ReferenceEditor';
 import { readReference, type ReferenceAsset } from './references';
 import { RoundingIcon } from './RoundingIcon';
@@ -1273,6 +1274,18 @@ export function App() {
           <span className="version-badge">EARLY ACCESS</span>
         </div>
         <PartTitle name={doc.name} onRename={(name) => commit({ ...doc, name })} />
+        <DesktopUpdates
+          canRestart={
+            !busy &&
+            !form &&
+            !pointForm &&
+            !curveForm &&
+            !filletForm &&
+            !referenceForm &&
+            !referenceLoading &&
+            saveStatus === 'Saved locally'
+          }
+        />
         <button className="header-help" aria-label="Help and shortcuts" onClick={() => setHelp((v) => !v)}>
           <CircleHelp size={18} />
         </button>

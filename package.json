@@ -1,6 +1,6 @@
 {
   "name": "mvcad",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,9 +17,10 @@
     "desktop:pack": "npm run build && electron-builder --dir --publish never",
     "desktop:win": "npm run build && electron-builder --win --x64 --publish never",
     "desktop:mac": "npm run build && electron-builder --mac --publish never",
-    "test:desktop": "node --test tests/desktop.test.mjs && node scripts/test-desktop.mjs"
+    "test:desktop": "node --test tests/desktop.test.mjs tests/updates.test.mjs && node scripts/test-desktop.mjs"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "lucide-react": "^0.468.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
