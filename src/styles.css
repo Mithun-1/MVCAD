@@ -1905,6 +1905,23 @@ dd {
   min-height: 90px;
   background: #fcfdfe;
 }
+.point-display-settings {
+  margin: 0 18px 12px;
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 6px 12px;
+  align-items: center;
+}
+.point-display-settings label {
+  font-size: 12px;
+}
+.point-display-settings input {
+  width: 100%;
+}
+.point-display-settings p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 .point-coordinate-tools {
   display: flex;
   align-items: center;

@@ -160,6 +160,8 @@ export function validateDocument(value: unknown): Document {
       names.has(set.name.trim().toLowerCase()) ||
       typeof set.visible !== 'boolean' ||
       (set.suppressed !== undefined && typeof set.suppressed !== 'boolean') ||
+      (set.skipPoints !== undefined &&
+        (!Number.isInteger(set.skipPoints) || set.skipPoints < 0 || set.skipPoints > MAX_POINTS)) ||
       !Array.isArray(set.points) ||
       !set.points.length ||
       !Array.isArray(set.sourceFiles) ||
@@ -200,6 +202,7 @@ export function validateDocument(value: unknown): Document {
       ...(set.suppressed ? { suppressed: true } : {}),
       points,
       sourceFiles: [...set.sourceFiles],
+      ...(set.skipPoints ? { skipPoints: set.skipPoints } : {}),
     };
   });
   const curves = doc.curves === undefined ? [] : doc.curves;

@@ -762,6 +762,13 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       if (!set || (!preview && !set.visible) || !evaluated.positions.length) continue;
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(evaluated.positions, 3));
+      if (set.skipPoints) {
+        const stride = set.skipPoints + 1;
+        // Keep original vertex indices so picking still resolves the exact source point ID.
+        geometry.setIndex(
+          Array.from({ length: Math.ceil(evaluated.positions.length / 3 / stride) }, (_, i) => i * stride),
+        );
+      }
       const cloud = new THREE.Points(
         geometry,
         new THREE.PointsMaterial({

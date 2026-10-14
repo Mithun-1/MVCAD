@@ -33,6 +33,7 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
       name: initial?.name ?? `Point set ${n}`,
       rows: initial?.points.map(rowFromPoint) ?? [emptyRow('P1')],
       sourceFiles: initial?.sourceFiles ?? [],
+      skipPoints: String(initial?.skipPoints ?? 0),
     };
   });
   const [page, setPage] = useState(0);
@@ -49,6 +50,14 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
     try {
       const name = draft.name.trim();
       if (!name) throw new Error('Enter a point-set name.');
+      const skipPoints = Number(draft.skipPoints);
+      if (
+        !draft.skipPoints.trim() ||
+        !Number.isInteger(skipPoints) ||
+        skipPoints < 0 ||
+        skipPoints > MAX_POINTS
+      )
+        throw new Error(`Skip points must be a whole number from 0 to ${MAX_POINTS.toLocaleString()}.`);
       const names = [
         'origin',
         ...BASE_PLANES.map((p) => planeName(doc, p.id).toLowerCase()),
@@ -94,6 +103,7 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
           visible: initial?.visible ?? true,
           suppressed: initial?.suppressed,
           sourceFiles: draft.sourceFiles,
+          ...(skipPoints ? { skipPoints } : {}),
         },
         error: '',
       };
@@ -165,6 +175,29 @@ export function PointEditor({ doc, id, initial, busy, engineError, onPreview, on
           <dt>Type</dt>
           <dd>Cartesian</dd>
         </dl>
+      </div>
+      <div className="point-display-settings">
+        <label htmlFor="point-skip-count">Skip points</label>
+        <input
+          id="point-skip-count"
+          type="number"
+          min="0"
+          max={MAX_POINTS}
+          step="1"
+          value={draft.skipPoints}
+          disabled={importing}
+          aria-describedby="point-skip-help"
+          onChange={(e) => setDraft((d) => ({ ...d, skipPoints: e.target.value }))}
+        />
+        <p id="point-skip-help" className="field-hint">
+          Show one point, then skip N. Use 0 to show all. Source points and curves are preserved.
+        </p>
+        {evaluation.set && (
+          <p className="field-hint" aria-live="polite">
+            {Math.ceil(draft.rows.length / ((evaluation.set.skipPoints ?? 0) + 1)).toLocaleString()} of{' '}
+            {draft.rows.length.toLocaleString()} points shown
+          </p>
+        )}
       </div>
       <div className="point-table-heading">
         <span>POINT COORDINATES</span>

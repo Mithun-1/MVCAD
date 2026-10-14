@@ -7,6 +7,8 @@ export type PointSet = {
   points: DatumPoint[];
   visible: boolean;
   suppressed?: boolean;
+  /** Display one point, then hide this many; source coordinates remain unchanged. */
+  skipPoints?: number;
   sourceFiles: string[];
 };
 export type EvaluatedPointSet = { id: string; positions: Float64Array };

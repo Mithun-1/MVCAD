@@ -4,6 +4,41 @@ import { parsePointCsv, parsePointFile, parsePointPts, coordinate } from '../src
 import { newDocument, validateDocument } from '../src/model.ts';
 import { readFile } from 'node:fs/promises';
 
+test('point display skipping survives file validation without removing source or curve references', () => {
+  const doc = newDocument();
+  doc.pointSets = [
+    {
+      id: 'cloud',
+      name: 'Cloud',
+      visible: true,
+      sourceFiles: [],
+      skipPoints: 2,
+      points: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, x: i, y: 0, z: 0 })),
+    },
+  ];
+  doc.curves = [
+    {
+      id: 'curve',
+      name: 'Curve',
+      visible: true,
+      nodes: [1, 5].map((i) => ({
+        id: `n${i}`,
+        point: { setId: 'cloud', pointId: `p${i}` },
+        connection: 'line',
+      })),
+    },
+  ];
+  const restored = validateDocument(JSON.parse(JSON.stringify(doc)));
+  assert.deepEqual(restored.pointSets, doc.pointSets);
+  assert.deepEqual(restored.curves, doc.curves);
+  for (const invalid of [-1, 1.5, '2', null, Infinity, 100001]) {
+    doc.pointSets[0].skipPoints = invalid;
+    assert.throws(() => validateDocument(doc), /Invalid point set/);
+  }
+  delete doc.pointSets[0].skipPoints;
+  assert.equal(validateDocument(doc).pointSets[0].skipPoints, undefined);
+});
+
 test('CSV accepts headers, reordered named columns, BOM, quoting, CRLF and scientific notation', () => {
   const named = parsePointCsv(
     '\uFEFFZ,Name,X,Y\r\n-3,"Left, top",1.5,2e2\r\n\r\n0,"A ""quoted"" point",-1,0.25',
