@@ -105,6 +105,7 @@ test('F2 renames a reference plane with validation, cancellation, history and pe
   await input.fill('Support');
   await page.getByRole('heading', { name: 'Properties', exact: true }).click();
   await expect(page.getByRole('treeitem', { name: /^Support/ })).toBeVisible();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('treeitem', { name: /^Support/ })).toBeVisible();
   await page.getByRole('treeitem', { name: 'Origin', exact: true }).click();
@@ -165,9 +166,10 @@ test('default planes and custom planes can be renamed from the menu without brea
   await page.getByRole('combobox', { name: 'Export format', exact: true }).selectOption('mvcad');
   await page.getByRole('button', { name: 'Export MVCAD', exact: true }).click();
   const path = await (await downloadPromise).path();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('treeitem', { name: 'Ground', exact: true })).toBeVisible();
-  await page.locator('input[type=file]').setInputFiles(path!);
+  await page.getByLabel('Open or import file').setInputFiles(path!);
   await expect(page.getByRole('treeitem', { name: 'Elevation', exact: true })).toBeVisible();
   await page.getByRole('treeitem', { name: 'Ground', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Create reference plane', exact: true }).click();
@@ -214,6 +216,7 @@ test('chained offsets update after parent edit, persist, and support undo / redo
   await expect(page.getByTestId('selected-position')).toHaveText('0, 15, 0');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(page.getByTestId('selected-position')).toHaveText('0, 40, 0');
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
   await page.getByRole('treeitem', { name: /^Lower deck/ }).click();
@@ -253,9 +256,9 @@ test('download roundtrip and invalid import preserve the working document', asyn
   const download = await downloadPromise;
   const path = await download.path();
   await page.getByRole('button', { name: 'Delete plane', exact: true }).click();
-  await page.locator('input[type=file]').setInputFiles(path!);
+  await page.getByLabel('Open or import file').setInputFiles(path!);
   await expect(page.getByRole('treeitem', { name: /^Section/ })).toBeVisible();
-  await page.locator('input[type=file]').setInputFiles({
+  await page.getByLabel('Open or import file').setInputFiles({
     name: 'invalid.json',
     mimeType: 'application/json',
     buffer: Buffer.from('{"version":99}'),

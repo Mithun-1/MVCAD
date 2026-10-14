@@ -79,7 +79,7 @@ test('binary STL imports preserve coordinates and reject nonfinite mesh data', a
   vertices.forEach((v, i) => data.setFloat32(96 + i * 4, v, true));
   const asset = await readReference(new File([bytes], 'triangle.stl'), 'Triangle', 'front');
   assert.equal(asset.kind, 'stl');
-  assert.deepEqual(asset.positions, vertices);
+  assert.deepEqual(Array.from(asset.positions), vertices);
   data.setFloat32(96, NaN, true);
   await assert.rejects(
     readReference(new File([bytes], 'invalid.stl'), 'Invalid', 'front'),

@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument, STORAGE_KEY } from '../../src/model';
 
@@ -24,15 +25,12 @@ test('New part is left of Open, clears the workspace, and preserves the previous
   await button.click();
   await expect(page.getByRole('treeitem', { name: 'Offset plane', exact: true })).toHaveCount(0);
   await expect(page.locator('.properties-sidebar')).toHaveCount(0);
-  await expect
-    .poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY))
-    .toEqual(newDocument());
+  await expect.poll(() => readSavedDocument(page)).toEqual(newDocument());
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByRole('treeitem', { name: 'Offset plane', exact: true })).toBeVisible();
-  await expect
-    .poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY))
-    .toEqual(original);
+  await expect.poll(() => readSavedDocument(page)).toEqual(original);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('treeitem', { name: 'Offset plane', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Rename part', exact: true })).toContainText('Untitled part');

@@ -96,6 +96,7 @@ test('Auto Sweep joins assigned vessels, updates diameter edits, skips unassigne
   await expect(startCutoff).toBeDisabled();
   await expect(endCutoff).toBeDisabled();
   await expect(rounding).toHaveCount(0);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
   await page.getByRole('treeitem', { name: /^Main vessel/ }).click();
@@ -140,6 +141,7 @@ test('Auto Sweep joins assigned vessels, updates diameter edits, skips unassigne
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(solid).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(solid).toBeVisible({ timeout: 20000 });

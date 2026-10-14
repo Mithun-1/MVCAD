@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -40,7 +41,7 @@ test('skip points previews, preserves picking IDs and curve references, and supp
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Front', exact: true }).click();
   const canvas = page.locator('.canvas-host canvas');
-  const readDoc = () => page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const readDoc = () => readSavedDocument(page);
   const edit = async () => {
     await page.getByRole('treeitem', { name: 'Cloud', exact: true }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Edit feature', exact: true }).click();
@@ -84,6 +85,7 @@ test('skip points previews, preserves picking IDs and curve references, and supp
   await expect(canvas).toHaveAttribute('data-hover-point', 'p1');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect.poll(async () => (await readDoc()).pointSets[0].skipPoints).toBe(2);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
   await edit();

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { importProjectFile } from '../../src/projectFile';
 
 test('STL references select in the viewport, preview opacity, persist and stay outside body export', async ({
   page,
@@ -32,6 +33,7 @@ test('STL references select in the viewport, preview opacity, persist and stay o
   await opacity.press('ArrowLeft');
   await expect(opacity).toHaveValue('99');
   await page.getByRole('button', { name: 'Apply reference' }).click();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole('treeitem', { name: 'vessel-reference', exact: true }).click();
   await expect(opacity).toHaveValue('99');
@@ -47,7 +49,7 @@ test('STL references select in the viewport, preview opacity, persist and stay o
   await page.getByRole('combobox', { name: 'Export format' }).selectOption('mvcad');
   const downloading = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export MVCAD' }).click();
-  const doc = JSON.parse(await readFile((await (await downloading).path())!, 'utf8'));
+  const doc = await importProjectFile(new Blob([await readFile((await (await downloading).path())!)]));
   expect(doc.references[0].positions).toHaveLength(9);
   expect(doc.references[0].opacity).toBe(0.99);
   await page.getByRole('button', { name: 'Delete vessel-reference' }).click();
@@ -89,6 +91,7 @@ test('reference image supports plane attachment, numeric placement, mouse sizing
   ])
     await page.getByRole('spinbutton', { name: 'Image ' + key }).fill(value);
   await page.getByRole('button', { name: 'Apply reference' }).click();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole('treeitem', { name: 'guide', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Image reference plane' })).toHaveValue('top');

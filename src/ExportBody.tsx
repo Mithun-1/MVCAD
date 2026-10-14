@@ -14,7 +14,7 @@ export function ExportBody({
   name: string;
   disabled: boolean;
   onExport: (message: string) => void;
-  onExportDocument: () => void;
+  onExportDocument: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<'mvcad' | 'step'>('mvcad');
@@ -40,11 +40,18 @@ export function ExportBody({
     setExporting(false);
     return () => worker.current?.terminate();
   }, [mesh]);
-  const start = () => {
+  const start = async () => {
     if (format === 'mvcad') {
-      onExportDocument();
-      onExport('Exported MVCAD document.');
-      close();
+      setExporting(true);
+      setError('');
+      try {
+        await onExportDocument();
+        onExport('Exported MVCAD document.');
+        close();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not export the project.');
+        setExporting(false);
+      }
       return;
     }
     if (!mesh?.cadBreps?.length || disabled || exporting) return;
@@ -165,8 +172,8 @@ export function ExportBody({
         )}
         {exporting && (
           <div role="status" className="body-export-progress">
-            Exporting STEP… {Math.round(progress * 100)}%
-            <progress aria-label="STEP export progress" max={1} value={progress} />
+            {format === 'mvcad' ? 'Preparing MVCAD file…' : `Exporting STEP… ${Math.round(progress * 100)}%`}
+            {format === 'step' && <progress aria-label="STEP export progress" max={1} value={progress} />}
           </div>
         )}
         <div className="form-actions">

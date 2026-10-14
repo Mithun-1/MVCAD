@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -79,12 +80,13 @@ test('multi-select, group, rename, collapse, visibility, history and document ro
   await tree.getByRole('button', { name: 'Show Vessel setup', exact: true }).click();
   await expect(tree.getByRole('button', { name: 'Hide Offset A', exact: true })).toBeEnabled();
   await expect(tree.getByRole('button', { name: 'Show Offset B', exact: true })).toBeEnabled();
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const saved = await readSavedDocument(page);
   expect(saved.groups[0]).toMatchObject({
     name: 'Vessel setup',
     members: ['p1', 'p2', 'set', 'curve'],
     visible: true,
   });
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(row('Vessel setup')).toBeVisible();
   await row('Vessel setup').click();

@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { newDocument } from '../../src/model';
@@ -71,9 +72,7 @@ test('Features fillet selects real edges, persists, edits, suppresses, and expor
   await expect(page.getByRole('heading', { name: 'Selected edges (2)', exact: true })).toBeVisible();
   const preview = page.getByRole('status').filter({ hasText: 'Rounding preview — Apply' });
   await expect(preview).toBeVisible();
-  expect(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).fillets ?? []),
-  ).toEqual([]);
+  expect(await readSavedDocument(page).then((doc) => doc.fillets ?? [])).toEqual([]);
   await page.mouse.move(10, 10);
   const radius15 = await canvas.screenshot();
   await page.getByRole('spinbutton', { name: 'Fillet radius', exact: true }).fill('0.5');
@@ -105,9 +104,7 @@ test('Features fillet selects real edges, persists, edits, suppresses, and expor
   await page.getByRole('button', { name: 'Cancel fillet', exact: true }).click();
   await expect(features.getByRole('button', { name: 'Regenerate', exact: true })).toBeEnabled();
   await expect(page.locator('.properties-body')).toContainText('Radius: 1.5');
-  expect(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).fillets[0].radius),
-  ).toBe(1.5);
+  expect(await readSavedDocument(page).then((doc) => doc.fillets[0].radius)).toBe(1.5);
   await page.getByRole('button', { name: 'Edit feature', exact: true }).click();
   await expect(preview).toBeVisible();
   await page.getByRole('spinbutton', { name: 'Fillet radius', exact: true }).fill('1');
@@ -117,6 +114,7 @@ test('Features fillet selects real edges, persists, edits, suppresses, and expor
   await expect(fillet.locator('..')).toHaveClass(/suppressed-feature/);
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await expect(features.getByRole('button', { name: 'Regenerate', exact: true })).toBeEnabled();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(fillet).toBeVisible();
   await fillet.click();

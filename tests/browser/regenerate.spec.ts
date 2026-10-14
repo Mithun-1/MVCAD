@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -95,7 +96,7 @@ test('regeneration shows centered progress on reload and manually rebuilds solid
     mb = (await remove.boundingBox())!;
   expect(rb.y).toBeGreaterThanOrEqual(mb.y + mb.height);
   expect(Math.abs(rb.x - mb.x)).toBeLessThan(2);
-  const saved = await page.evaluate(() => localStorage.getItem('mvcad.document.v1'));
+  const saved = await readSavedDocument(page).then((doc) => JSON.stringify(doc));
   const counts = () =>
     page.evaluate(
       () =>
@@ -107,7 +108,7 @@ test('regeneration shows centered progress on reload and manually rebuilds solid
   await expect.poll(async () => (await counts()).appearances).toBeGreaterThan(before.appearances);
   await expect(regenerate).toBeEnabled();
   expect((await counts()).chunkUpdates).toBeGreaterThan(before.chunkUpdates);
-  expect(await page.evaluate(() => localStorage.getItem('mvcad.document.v1'))).toEqual(saved);
+  expect(await readSavedDocument(page).then((doc) => JSON.stringify(doc))).toEqual(saved);
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
   await remove.click();
   await expect(regenerate).toBeEnabled();

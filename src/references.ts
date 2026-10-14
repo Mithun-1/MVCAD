@@ -31,7 +31,7 @@ export function validReferenceTransform(t: ReferenceTransform): boolean {
 }
 export type ReferenceAsset = Common &
   (
-    | { kind: 'stl'; positions: number[]; transform?: ReferenceTransform }
+    | { kind: 'stl'; positions: number[] | Float32Array | Float64Array; transform?: ReferenceTransform }
     | {
         kind: 'image';
         dataUrl: string;
@@ -61,7 +61,9 @@ export function validateReference(asset: ReferenceAsset, planeIds: Set<string>):
   const common = { id: asset.id, name: asset.name.trim(), visible: asset.visible, opacity: asset.opacity };
   if (
     asset.kind === 'stl' &&
-    Array.isArray(asset.positions) &&
+    (Array.isArray(asset.positions) ||
+      asset.positions instanceof Float32Array ||
+      asset.positions instanceof Float64Array) &&
     asset.positions.length >= 9 &&
     asset.positions.length <= MAX_REFERENCE_COORDINATES &&
     asset.positions.length % 9 === 0 &&
@@ -114,7 +116,7 @@ export async function readReference(file: File, name: string, planeId: string): 
     const { STLLoader } = await import('three/addons/loaders/STLLoader.js');
     const geometry = new STLLoader().parse(await file.arrayBuffer());
     try {
-      const positions = Array.from(geometry.getAttribute('position')?.array ?? []);
+      const positions = geometry.getAttribute('position')?.array as Float32Array;
       return validateReference({ ...common, kind: 'stl', positions }, new Set());
     } finally {
       geometry.dispose();

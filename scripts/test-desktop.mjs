@@ -1,3 +1,4 @@
+import { readSavedDocument } from './read-saved-document.mjs';
 import { _electron as electron, expect } from '@playwright/test';
 import { mkdtemp, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -99,9 +100,7 @@ try {
   await expect(reopened.getByRole('treeitem', { name: 'Body 1', exact: true })).toBeVisible({
     timeout: 60000,
   });
-  expect(await reopened.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')).name)).toBe(
-    'Desktop smoke test',
-  );
+  expect(await readSavedDocument(reopened).then((doc) => doc.name)).toBe('Desktop smoke test');
   console.log(
     'Desktop smoke passed: isolated renderer, offline CAD generation, file import, STEP export, persisted document after restart.',
   );

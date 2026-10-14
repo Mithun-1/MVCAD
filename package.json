@@ -9,7 +9,7 @@
     "build:web": "tsc -b && vite build --base=/MVCAD/ --outDir=dist-web",
     "preview": "vite preview --host 127.0.0.1",
     "build:engine": "node scripts/build-engine.mjs",
-    "test:engine": "node --test tests/engine.test.mjs tests/model.test.mjs tests/groups.test.mjs tests/points.test.mjs tests/displayBounds.test.mjs tests/curves.test.mjs tests/stepImport.test.mjs tests/viewTools.test.mjs tests/sweep.test.mjs tests/sweepCache.test.mjs tests/sweepPool.test.mjs tests/smoothJunctionMesh.test.mjs tests/orbitPivot.test.mjs tests/cadBody.test.mjs tests/references.test.mjs",
+    "test:engine": "node --test tests/engine.test.mjs tests/model.test.mjs tests/groups.test.mjs tests/points.test.mjs tests/displayBounds.test.mjs tests/curves.test.mjs tests/stepImport.test.mjs tests/viewTools.test.mjs tests/sweep.test.mjs tests/sweepCache.test.mjs tests/sweepPool.test.mjs tests/smoothJunctionMesh.test.mjs tests/orbitPivot.test.mjs tests/cadBody.test.mjs tests/references.test.mjs tests/projectFile.test.mjs",
     "test:e2e": "playwright test",
     "test": "npm run test:engine && npm run test:e2e",
     "format": "prettier --write src scripts tests *.json *.ts README.md index.html",

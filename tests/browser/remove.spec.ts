@@ -60,6 +60,7 @@ test('Remove opens all vessel ends, restores solids, and supports history and re
   await expect(body).toHaveAttribute('data-triangles', String(solidTriangles));
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(body).toHaveAttribute('data-body-kind', 'surface', { timeout: 20000 });
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(remove).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('treeitem', { name: 'Body 1', exact: true }).click();

@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 
 test('PTS imports through the point editor, invalid rows preserve the draft, and points persist', async ({
@@ -27,9 +28,10 @@ test('PTS imports through the point editor, invalid rows preserve the draft, and
   await expect(page.getByLabel('Point 3 X', { exact: true })).toHaveValue('397.5');
   await page.getByRole('button', { name: 'Create points', exact: true }).click();
   await expect(page.locator('.point-editor')).toHaveCount(0);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('treeitem', { name: 'Point set 1', exact: true })).toBeVisible();
-  const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const doc = await readSavedDocument(page);
   expect(doc.pointSets[0].sourceFiles).toEqual(['centerline.pts']);
   expect(doc.pointSets[0].points.map((p: { x: number; y: number; z: number }) => [p.x, p.y, p.z])).toEqual([
     [0, 21, 73.5],

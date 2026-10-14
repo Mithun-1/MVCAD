@@ -1,3 +1,4 @@
+import { readSavedDocument } from './read-saved-document.mjs';
 import { chromium, webkit, expect } from '@playwright/test';
 import { preview } from 'vite';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -36,6 +37,34 @@ try {
       await expect(page.getByRole('button', { name: 'Check app updates', exact: true })).toHaveCount(0);
       const doc = newDocument();
       doc.name = 'Browser smoke test';
+      doc.references = [
+        {
+          id: 'guide',
+          name: 'Guide',
+          kind: 'stl',
+          visible: false,
+          opacity: 0.6,
+          positions: [0, 0, 0, 10, 0, 0, 0, 10, 0],
+        },
+      ];
+      doc.references.push({
+        id: 'image',
+        name: 'Image guide',
+        kind: 'image',
+        visible: false,
+        opacity: 0.5,
+        dataUrl: await page.evaluate(() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 4;
+          canvas.getContext('2d').fillRect(0, 0, 4, 4);
+          return canvas.toDataURL();
+        }),
+        planeId: 'front',
+        width: 20,
+        height: 20,
+        centerU: 0,
+        centerV: 0,
+      });
       doc.autoSweep = true;
       doc.pointSets = [
         {
@@ -81,17 +110,30 @@ try {
       const download = page.waitForEvent('download', { timeout: 60000 });
       await page.getByRole('button', { name: 'Export STEP', exact: true }).click();
       expect(await readFile(await (await download).path(), 'utf8')).toContain('MANIFOLD_SOLID_BREP');
+      await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
       await page.reload();
       await expect(page.getByRole('treeitem', { name: 'Body 1', exact: true })).toBeVisible({
         timeout: 60000,
       });
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')).name)).toBe(
-        doc.name,
-      );
+      expect(await readSavedDocument(page).then((doc) => doc.name)).toBe(doc.name);
+      expect(await readSavedDocument(page).then((saved) => saved.references)).toEqual(doc.references);
+      await page.getByRole('button', { name: 'Export', exact: true }).click();
+      await page.getByRole('combobox', { name: 'Export format', exact: true }).selectOption('mvcad');
+      const compactDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export MVCAD', exact: true }).click();
+      const compact = await readFile(await (await compactDownload).path());
+      expect(compact.subarray(0, 8).toString()).toBe('MVCAD2\r\n');
+      await page.getByLabel('Open or import file').setInputFiles({
+        name: 'compact.mvcad',
+        mimeType: 'application/octet-stream',
+        buffer: compact,
+      });
+      await expect(page.getByText('Document opened. Undo restores the previous document.')).toBeVisible();
+      expect(await readSavedDocument(page).then((saved) => saved.references)).toEqual(doc.references);
       await page.screenshot({ path: `test-results/web/${name}.png` });
       expect(errors).toEqual([]);
       console.log(
-        `${name}: browser startup, CAD union, STEP export, and saved-model reload passed at ${url}`,
+        `${name}: startup, CAD union, STEP export, binary reference persistence and compact project roundtrip passed at ${url}`,
       );
     } finally {
       await browser.close();

@@ -35,7 +35,6 @@ import {
   BASE_PLANES,
   MAX_OFFSET,
   MAX_PLANES,
-  STORAGE_KEY,
   descendants,
   newDocument,
   nextPlaneName,
@@ -91,9 +90,14 @@ import {
 } from './curves';
 import type { PointSet, EvaluatedPointSet } from './points';
 import { importStepCurves } from './stepImport';
+import { saveProject, requestPersistentStorage, type InitialWorkspace } from './projectStorage';
+import { exportProjectFile, importProjectFile } from './projectFile';
+import { StorageStatus } from './StorageStatus';
 
 type History = { past: Document[]; present: Document; future: Document[] };
 type Action = { type: 'commit'; doc: Document } | { type: 'undo' | 'redo' };
+const SAVE_ERROR =
+  'Browser storage could not save these changes. Your previous save is preserved. Export a backup or open Storage to retry.';
 type Form = { mode: 'create' | 'edit'; id: string; name: string; parentId: string; offset: string };
 function reducer(state: History, action: Action): History {
   if (action.type === 'commit')
@@ -108,17 +112,6 @@ function reducer(state: History, action: Action): History {
     return { past: [...state.past, state.present], present: state.future[0], future: state.future.slice(1) };
   return state;
 }
-function initialDocument() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return { doc: raw ? validateDocument(JSON.parse(raw)) : newDocument(), warning: '' };
-  } catch {
-    return {
-      doc: newDocument(),
-      warning: 'The saved document could not be restored. It will be replaced only when you make an edit.',
-    };
-  }
-}
 function PlaneIcon({ color = '#71869a' }: { color?: string }) {
   return (
     <svg className="plane-icon" width="19" height="21" viewBox="0 0 19 21" fill="none" aria-hidden="true">
@@ -130,7 +123,7 @@ function PlaneIcon({ color = '#71869a' }: { color?: string }) {
 const format = (n: number) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(Object.is(n, -0) ? 0 : n);
 
-export function App() {
+export function App({ initial }: { initial: InitialWorkspace }) {
   const [showEdges, setShowEdges] = useState(() => {
     try {
       return localStorage.getItem('mvcad.showEdges') === 'true';
@@ -161,7 +154,6 @@ export function App() {
       // The toggle still works when browser storage is unavailable.
     }
   }, [darkMode]);
-  const [initial] = useState(initialDocument);
   const [history, dispatch] = useReducer(reducer, { past: [], present: initial.doc, future: [] });
   const doc = useMemo(
     () => ({
@@ -290,7 +282,14 @@ export function App() {
   const [regeneration, setRegeneration] = useState(0);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [notice, setNotice] = useState(initial.warning);
-  const [saveStatus, setSaveStatus] = useState(initial.warning ? 'Restore failed' : 'Saved locally');
+  const [saveState, setSaveState] = useState({
+    doc,
+    status: initial.warning ? 'Restore failed' : 'Saving…',
+  });
+  // A previous save completing must never label a newer document as saved.
+  const saveStatus = saveState.doc === doc ? saveState.status : 'Saving…';
+  const [saveRetry, setSaveRetry] = useState(0);
+  const persistenceRequested = useRef(false);
   const [help, setHelp] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [bodiesCollapsed, setBodiesCollapsed] = useState(false);
@@ -302,7 +301,7 @@ export function App() {
   const openRequest = useRef(0);
   const worker = useRef<Worker | null>(null);
   const sequence = useRef(0);
-  const lastSaved = useRef(doc);
+  const lastSaved = useRef<Document | undefined>(initial.warning ? doc : undefined);
   const selectedFeature = doc.planes.find((p) => p.id === selected);
   const selectedSet = doc.pointSets.find((p) => p.id === selected);
   const selectedCurve = doc.curves.find((p) => p.id === selected);
@@ -496,15 +495,37 @@ export function App() {
   }, [geometry, busy]);
   useEffect(() => {
     if (lastSaved.current === doc) return;
-    lastSaved.current = doc;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-      setSaveStatus('Saved locally');
-    } catch {
-      setSaveStatus('Not saved');
-      setNotice('Browser storage is unavailable or full. Download your document to keep these changes.');
-    }
-  }, [doc]);
+    let cancelled = false;
+    setSaveState({ doc, status: 'Saving…' });
+    const timer = setTimeout(() => {
+      void saveProject(doc)
+        .then(() => {
+          if (cancelled) return;
+          lastSaved.current = doc;
+          setSaveState({ doc, status: 'Saved locally' });
+          setNotice((previous) => (previous === SAVE_ERROR || previous === initial.warning ? '' : previous));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSaveState({ doc, status: 'Not saved' });
+          setNotice(SAVE_ERROR);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [doc, saveRetry]);
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (saveStatus === 'Saving…' || saveStatus === 'Not saved') {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [saveStatus]);
   useEffect(() => {
     if (selected && selected !== 'origin' && !allNames.some((p) => p.id === selected)) setSelected(null);
     if (selectedSectionId && !selectedSection) setSelectedSectionId(null);
@@ -517,6 +538,10 @@ export function App() {
   }, [featureIds]);
 
   const commit = (next: Document) => {
+    if (!persistenceRequested.current) {
+      persistenceRequested.current = true;
+      void requestPersistentStorage();
+    }
     if (next.boundingBox && !boxDimensions(next)) {
       next = { ...next };
       delete next.boundingBox;
@@ -863,10 +888,10 @@ export function App() {
     try {
       if (curvesOnly && !/\.(stp|step)$/i.test(file.name))
         throw new Error('Only STEP files are supported as of now.');
-      if (file.size > 50_000_000) throw new Error('This document is too large (maximum 50 MB).');
-      const text = await file.text();
-      if (request !== openRequest.current) return;
       if (/\.(stp|step)$/i.test(file.name)) {
+        if (file.size > 50_000_000) throw new Error('STEP curve files must be 50 MB or smaller.');
+        const text = await file.text();
+        if (request !== openRequest.current) return;
         const imported = importStepCurves(currentDocument.current, text, file.name);
         fitImported.current = imported.curveIds;
         commit(imported.doc);
@@ -876,7 +901,9 @@ export function App() {
           `Imported ${imported.curveIds.length} STEP curves with ${imported.sectionCount} subcurves (mm). Undo removes the import.`,
         );
       } else {
-        commit(validateDocument(JSON.parse(text)));
+        const opened = await importProjectFile(file);
+        if (request !== openRequest.current) return;
+        commit(opened);
         setSelected(null);
         setNotice('Document opened. Undo restores the previous document.');
       }
@@ -931,13 +958,13 @@ export function App() {
     setHelp(false);
     setNotice('New part created. Undo restores the previous part.');
   };
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+  const download = async () => {
+    const url = URL.createObjectURL(await exportProjectFile(doc));
     const link = document.createElement('a');
     link.href = url;
     link.download = `${doc.name.replace(/[^a-zA-Z0-9 _-]/g, '_')}.mvcad`;
     link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
   const editFillet = (feature?: FilletFeature) => {
     if (form || pointForm || curveForm || filletForm || referenceForm) return;
@@ -2402,6 +2429,14 @@ export function App() {
                   : 'Select a reference or create a new plane'}
         </span>
         <div className="status-right">
+          <StorageStatus
+            saveStatus={saveStatus}
+            onRetry={() => {
+              lastSaved.current = undefined;
+              setSaveState({ doc, status: 'Saving…' });
+              setSaveRetry((value) => value + 1);
+            }}
+          />
           <span>
             {saveStatus === 'Saved locally' && <Check size={13} />}
             {saveStatus}

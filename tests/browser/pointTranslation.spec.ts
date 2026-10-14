@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -12,7 +13,13 @@ test('translation moves all pages and skipped points atomically with cancel, und
       visible: true,
       sourceFiles: ['source.pts'],
       skipPoints: 3,
-      points: Array.from({ length: 51 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, x: i, y: i + 100, z: 0 - i })),
+      points: Array.from({ length: 51 }, (_, i) => ({
+        id: `p${i}`,
+        name: `P${i}`,
+        x: i,
+        y: i + 100,
+        z: 0 - i,
+      })),
     },
   ];
   doc.curves = [
@@ -31,7 +38,7 @@ test('translation moves all pages and skipped points atomically with cancel, und
     if (!localStorage.getItem('mvcad.document.v1'))
       localStorage.setItem('mvcad.document.v1', JSON.stringify(doc));
   }, doc);
-  const readDoc = () => page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const readDoc = () => readSavedDocument(page);
   const edit = async () => {
     await page.getByRole('treeitem', { name: 'Cloud', exact: true }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Edit feature', exact: true }).click();
@@ -83,6 +90,7 @@ test('translation moves all pages and skipped points atomically with cancel, und
   await expect.poll(async () => (await readDoc()).pointSets).toEqual(doc.pointSets);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect.poll(async () => (await readDoc()).pointSets[0]).toEqual(translated);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await edit();
   await expect(page.getByLabel('Translate X', { exact: true })).toHaveValue('0');

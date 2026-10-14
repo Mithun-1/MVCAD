@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect, type Page } from '@playwright/test';
 
 const positions = [
@@ -89,7 +90,7 @@ test('point shortcuts create mixed curves, insert and reorder references, edit s
   await expect(page.getByTestId('curve-point-count')).toHaveText('5');
   const curve = page.getByRole('treeitem', { name: /^Curve 1/ });
   const source = page.getByRole('treeitem', { name: /^Source points/ });
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const saved = await readSavedDocument(page);
   expect(saved.curves[0].nodes.at(-1).connection).toBe('line');
   expect(saved.curves[0].nodes.map((n: any) => n.point.pointId)).toEqual(
     [0, 1, 4, 2, 3].map((i) => saved.pointSets[0].points[i].id),
@@ -113,6 +114,7 @@ test('point shortcuts create mixed curves, insert and reorder references, edit s
   await expect(curve.locator('..')).not.toHaveClass(/suppressed-feature/);
   await curve.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Suppress', exact: true }).click();
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(curve.locator('..')).toHaveClass(/suppressed-feature/);
   await curve.click({ button: 'right' });
@@ -144,7 +146,7 @@ test('selecting a curve row replaces only that point on the next viewport pick',
   await page.getByRole('button', { name: 'Curve', exact: true }).click();
   for (const index of [0, 1, 2]) await pick(page, index);
   await page.getByRole('button', { name: 'Create curve', exact: true }).click();
-  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const before = await readSavedDocument(page);
   await page.getByRole('treeitem', { name: 'Curve 1', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Edit feature', exact: true }).click();
   await page.getByRole('option').nth(1).click();
@@ -153,7 +155,7 @@ test('selecting a curve row replaces only that point on the next viewport pick',
   await expect(page.getByRole('option')).toHaveCount(3);
   await expect(page.getByRole('option').nth(1)).toContainText('P5');
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
-  const after = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const after = await readSavedDocument(page);
   expect(after.curves[0].nodes).toEqual(
     before.curves[0].nodes.map((node: any, index: number) =>
       index === 1
@@ -163,7 +165,7 @@ test('selecting a curve row replaces only that point on the next viewport pick',
   );
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect
-    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).curves[0].nodes))
+    .poll(() => readSavedDocument(page).then((doc) => doc.curves[0].nodes))
     .toEqual(before.curves[0].nodes);
 });
 

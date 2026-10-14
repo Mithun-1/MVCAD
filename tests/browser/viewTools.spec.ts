@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -59,6 +60,7 @@ test('bounding box persists, spacing measures a vessel, and section clipping hid
   await expect(page.locator('.spacing-dimension')).toBeVisible();
   await page.getByRole('button', { name: 'Fit all geometry', exact: true }).click();
   await page.screenshot({ path: 'test-results/view-spacing.png', animations: 'disabled' });
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole('treeitem', { name: 'Computational Domain', exact: true }).click();
   await expect(page.getByRole('treeitem', { name: 'Lx', exact: true })).toBeVisible();
@@ -88,7 +90,7 @@ test('bounding box persists, spacing measures a vessel, and section clipping hid
   await page.getByRole('button', { name: 'Close Section View', exact: true }).click();
   await move(80, 20);
   await expect(canvas).toHaveAttribute('data-hover-point', 'b');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const saved = await readSavedDocument(page);
   expect(saved.curves).toEqual(doc.curves);
   expect(saved.pointSets).toEqual(doc.pointSets);
   expect(saved.planes).toHaveLength(3);

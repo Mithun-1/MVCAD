@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 
 test('dark mode persists and can switch during editing without changing the document', async ({ page }) => {
@@ -5,15 +6,16 @@ test('dark mode persists and can switch during editing without changing the docu
   await expect(page.getByText('Engine ready', { exact: true })).toBeVisible();
   const toggle = page.getByRole('button', { name: 'Dark mode', exact: true });
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  const savedDocument = await page.evaluate(() => localStorage.getItem('mvcad.document.v1'));
+  const savedDocument = await readSavedDocument(page);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('.toolbar')).toHaveCSS('background-color', 'rgb(12, 12, 12)');
   await page.screenshot({ path: 'test-results/dark-workspace.png' });
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => localStorage.getItem('mvcad.document.v1'))).toBe(savedDocument);
+  expect(await readSavedDocument(page)).toEqual(savedDocument);
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
 
   await page.getByRole('treeitem', { name: 'Front Plane', exact: true }).click({ button: 'right' });
@@ -33,7 +35,8 @@ test('dark mode persists and can switch during editing without changing the docu
   await page.screenshot({ path: 'test-results/dark-point-editor.png' });
   await toggle.click();
   await expect(page.getByLabel('Point 1 X', { exact: true })).toHaveValue('45');
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate(() => localStorage.getItem('mvcad.document.v1'))).toBe(savedDocument);
+  expect(await readSavedDocument(page)).toEqual(savedDocument);
 });

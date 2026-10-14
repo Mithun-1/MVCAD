@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -71,6 +72,6 @@ test('pinned section sliders combine cuts, stay usable while editing, and remove
   await page.getByRole('button', { name: 'Close Section View', exact: true }).click();
   await expect(dock).toHaveCount(0);
   await hover(0, true);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!));
+  const saved = await readSavedDocument(page);
   expect(saved.pointSets).toEqual(doc.pointSets);
 });

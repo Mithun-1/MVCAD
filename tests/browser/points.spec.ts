@@ -1,13 +1,13 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect, type Page } from '@playwright/test';
 
 async function savedPoints(page: Page, name: string, count: number) {
   await expect(page.getByRole('treeitem', { name, exact: true })).toHaveText(name);
   await expect
     .poll(() =>
-      page.evaluate((name) => {
-        const doc = JSON.parse(localStorage.getItem('mvcad.document.v1')!);
-        return doc.pointSets.find((set: { name: string }) => set.name === name)?.points.length;
-      }, name),
+      readSavedDocument(page).then(
+        (doc) => doc.pointSets.find((set: { name: string }) => set.name === name)?.points.length,
+      ),
     )
     .toBe(count);
 }
@@ -75,6 +75,7 @@ test('manual point set previews, saves, and edits through the feature context me
   await coordinate(page, 'Manual points', 'X', '25.5');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await savedPoints(page, 'Manual points', 3);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole('treeitem', { name: /^Manual points/ }).click();
   await coordinate(page, 'Manual points', 'X', '75');
@@ -104,11 +105,10 @@ test('multiple CSV imports become independent editable sets and later imports ap
   await page.getByRole('button', { name: 'Add point', exact: true }).click();
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
   await savedPoints(page, 'Survey A', 4);
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem('mvcad.document.v1')!).pointSets[0].sourceFiles,
-    ),
-  ).toEqual(['a.csv', 'append.csv']);
+  expect(await readSavedDocument(page).then((doc) => doc.pointSets[0].sourceFiles)).toEqual([
+    'a.csv',
+    'append.csv',
+  ]);
   await page.getByRole('treeitem', { name: /^Survey B/ }).click();
   await savedPoints(page, 'Survey B', 1);
   await coordinate(page, 'Survey B', 'Y', '-20');
@@ -120,7 +120,7 @@ test('multiple CSV imports become independent editable sets and later imports ap
   await page.getByRole('treeitem', { name: /^Survey B/ }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('treeitem', { name: /^Survey B/ })).toHaveCount(0);
-  await page.locator('input[type=file]').setInputFiles(file!);
+  await page.getByLabel('Open or import file').setInputFiles(file!);
   await expect(page.getByRole('treeitem', { name: /^Survey B/ })).toBeVisible();
 });
 

@@ -30,7 +30,7 @@ test('Delete menus and Del remove custom features with undo, while protecting de
   await expect(parent).toBeVisible();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Delete');
-  await expect(page.getByRole('alert')).toContainText('dependent planes first');
+  await expect(page.getByRole('alert')).toContainText('Delete its dependents first');
   await child.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await expect(child).toHaveCount(0);
@@ -72,6 +72,7 @@ test('Delete menus and Del remove custom features with undo, while protecting de
   await points.click();
   await page.keyboard.press('Delete');
   await expect(points).toHaveCount(0);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(points).toHaveCount(0);
 });

@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 import { newDocument } from '../../src/model';
 
@@ -19,8 +20,7 @@ test('STL transform previews, selects at transformed location, cancels, resets, 
     if (!localStorage.getItem('mvcad.document.v1'))
       localStorage.setItem('mvcad.document.v1', JSON.stringify(doc));
   }, doc);
-  const saved = () =>
-    page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).references[0]);
+  const saved = () => readSavedDocument(page).then((doc) => doc.references[0]);
   const edit = () => page.getByRole('treeitem', { name: 'Guide', exact: true }).click();
   const place = async () => {
     await page.getByRole('button', { name: 'Swap reference X and Y' }).click();
@@ -71,6 +71,7 @@ test('STL transform previews, selects at transformed location, cancels, resets, 
   await expect.poll(saved).toEqual(doc.references[0]);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect.poll(saved).toEqual(transformed);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await edit();
   await expect(page.getByLabel('Reference translation X', { exact: true })).toHaveValue('80');

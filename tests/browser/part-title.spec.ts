@@ -1,3 +1,4 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect } from '@playwright/test';
 
 test('part title edits persist, support undo and export, and preserve feature drafts', async ({ page }) => {
@@ -26,6 +27,7 @@ test('part title edits persist, support undo and export, and preserve feature dr
   await expect(title).toContainText('Untitled part');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(title).toContainText('Mounting bracket');
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await expect(title).toContainText('Mounting bracket');
   const download = page.waitForEvent('download');
@@ -50,6 +52,6 @@ test('part title edits persist, support undo and export, and preserve feature dr
   await input.fill('F'.repeat(100));
   await input.press('Enter');
   await expect(page.getByRole('button', { name: 'Help and shortcuts', exact: true })).toBeInViewport();
-  const rootName = await page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).name);
+  const rootName = await readSavedDocument(page).then((doc) => doc.name);
   expect(rootName).toBe('F'.repeat(100));
 });

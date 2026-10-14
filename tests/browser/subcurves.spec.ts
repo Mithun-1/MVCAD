@@ -148,6 +148,7 @@ test('shared-point branches split master curves into expandable, individually se
   await expect(chain).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(children.getByRole('treeitem')).toHaveCount(2);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
   await master.click();

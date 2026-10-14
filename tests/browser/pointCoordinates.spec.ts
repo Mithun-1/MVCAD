@@ -1,7 +1,7 @@
+import { readSavedDocument } from '../../scripts/read-saved-document.mjs';
 import { test, expect, type Page } from '@playwright/test';
 
-const readSet = (page: Page) =>
-  page.evaluate(() => JSON.parse(localStorage.getItem('mvcad.document.v1')!).pointSets[0]);
+const readSet = (page: Page) => readSavedDocument(page).then((doc) => doc.pointSets[0]);
 async function edit(page: Page) {
   await page.getByRole('treeitem', { name: 'Point set 1', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Edit feature', exact: true }).click();
@@ -57,6 +57,7 @@ test('coordinate swaps cover every page and preserve identities through save, ca
   await expect.poll(() => readSet(page)).toEqual(original);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect.poll(() => readSet(page)).toEqual(swapped);
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible();
   await page.reload();
   await edit(page);
   await expect(page.getByLabel('Point 1 X', { exact: true })).toHaveValue('100');
