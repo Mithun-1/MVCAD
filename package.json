@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "build:web": "tsc -b && vite build --base=/MVCAD/ --outDir=dist-web",
     "preview": "vite preview --host 127.0.0.1",
     "build:engine": "node scripts/build-engine.mjs",
     "test:engine": "node --test tests/engine.test.mjs tests/model.test.mjs tests/groups.test.mjs tests/points.test.mjs tests/displayBounds.test.mjs tests/curves.test.mjs tests/stepImport.test.mjs tests/viewTools.test.mjs tests/sweep.test.mjs tests/sweepCache.test.mjs tests/sweepPool.test.mjs tests/smoothJunctionMesh.test.mjs tests/orbitPivot.test.mjs tests/cadBody.test.mjs tests/references.test.mjs",
@@ -16,7 +17,6 @@
     "desktop": "npm run build && electron .",
     "desktop:pack": "npm run build && electron-builder --dir --publish never",
     "desktop:win": "npm run build && electron-builder --win --x64 --publish never",
-    "desktop:mac": "npm run build && electron-builder --mac --publish never",
     "test:desktop": "node --test tests/desktop.test.mjs tests/updates.test.mjs && node scripts/test-desktop.mjs"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-name: Desktop installers
+name: Windows installer
 on:
   workflow_dispatch:
   push:
@@ -14,9 +14,6 @@ jobs:
           - os: windows-latest
             target: win
             arch: x64
-          - os: macos-latest
-            target: mac
-            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -37,16 +34,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - run: node scripts/verify-update-artifacts.mjs
-      - name: Verify Mac app signature and disk image
-        if: matrix.target == 'mac'
-        run: |
-          codesign --verify --deep --strict --verbose=2 release/mac-arm64/MVCAD.app
-          codesign -dv --verbose=4 release/mac-arm64/MVCAD.app
-          mkdir -p "$RUNNER_TEMP/mvcad-dmg"
-          hdiutil attach release/MVCAD-arm64.dmg -mountpoint "$RUNNER_TEMP/mvcad-dmg" -nobrowse -readonly
-          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/mvcad-dmg/MVCAD.app"
-          DESKTOP_EXECUTABLE="$RUNNER_TEMP/mvcad-dmg/MVCAD.app/Contents/MacOS/MVCAD" npm run test:desktop
-          hdiutil detach "$RUNNER_TEMP/mvcad-dmg"
       - name: Test packaged Windows app
         if: matrix.target == 'win'
         run: |
@@ -58,8 +45,6 @@ jobs:
           name: MVCAD-${{ matrix.target }}-${{ matrix.arch }}
           path: |
             release/*.exe
-            release/*.dmg
-            release/*.zip
             release/*.yml
             release/*.blockmap
             !release/builder-debug.yml
@@ -82,5 +67,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" installers/* --draft --title "MVCAD $RELEASE_TAG" --notes "Windows: MVCAD.exe installer with in-app update checks, download progress, and restart-to-update. Mac: MVCAD-arm64.dmg; drag MVCAD into Applications. Mac updates currently use manual downloads until Apple Developer ID signing is configured. The Mac bundle has a verified local integrity signature but is not Apple-notarized. Windows is unsigned. Existing 0.1.0 installs require one manual installation to gain the update button."
+          gh release create "$RELEASE_TAG" installers/* --draft --title "MVCAD $RELEASE_TAG" --notes "Windows: MVCAD.exe installer with in-app update checks, download progress, and restart-to-update. Mac / Browser: https://mithun-1.github.io/MVCAD/ (no installer required). Windows is unsigned. Existing 0.1.0 installs require one manual installation to gain the update button."
           gh release edit "$RELEASE_TAG" --draft=false --latest
