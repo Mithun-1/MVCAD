@@ -9,6 +9,10 @@ const positions = [
   [45, 55],
 ];
 async function pick(page: Page, index: number) {
+  // The editor changes the viewport width; let its resize update the camera first.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
   const canvas = page.locator('.canvas-host canvas');
   const bounds = (await canvas.boundingBox())!;
   const [x, y] = positions[index];
@@ -167,6 +171,64 @@ test('selecting a curve row replaces only that point on the next viewport pick',
   await expect
     .poll(() => readSavedDocument(page).then((doc) => doc.curves[0].nodes))
     .toEqual(before.curves[0].nodes);
+});
+
+test('curve rows move the visible selection target even with the source point set hidden', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.getByRole('button', { name: 'Curve', exact: true }).click();
+  for (const index of [0, 1, 2]) await pick(page, index);
+  await page.getByRole('button', { name: 'Create curve', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Source points', exact: true }).click();
+  await page.getByRole('treeitem', { name: 'Curve 1', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Edit feature', exact: true }).click();
+  const targets = async () => {
+    const screenshot = await page.locator('.canvas-host canvas').screenshot();
+    return page.evaluate(
+      async ({ png, positions }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(image, 0, 0);
+        return positions.slice(0, 2).map(([x, y]) => {
+          const pixels = context.getImageData(
+            Math.round(image.width / 2 + (x * image.height) / 360) - 26,
+            Math.round(image.height / 2 - (y * image.height) / 360) - 26,
+            52,
+            52,
+          ).data;
+          let orange = 0;
+          for (let i = 0; i < pixels.length; i += 4)
+            if (
+              (pixels[i] > 140 && pixels[i + 1] > 50 && pixels[i + 1] < 115 && pixels[i + 2] < 35) ||
+              (pixels[i] > 230 && pixels[i + 1] > 150 && pixels[i + 1] < 190 && pixels[i + 2] < 85)
+            )
+              orange++;
+          return orange;
+        });
+      },
+      { png: screenshot.toString('base64'), positions },
+    );
+  };
+  for (const dark of [false, true]) {
+    if (dark) await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+    await page.getByRole('option').nth(0).click();
+    await expect.poll(targets).toEqual([expect.any(Number), 0]);
+    expect((await targets())[0]).toBeGreaterThan(20);
+    await page.getByRole('option').nth(1).click();
+    await expect(page.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(targets).toEqual([0, expect.any(Number)]);
+    expect((await targets())[1]).toBeGreaterThan(20);
+  }
+  await page.screenshot({ path: 'test-results/curve-row-selection.png' });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect.poll(targets).toEqual([0, 0]);
+  expect((await readSavedDocument(page)).pointSets[0].visible).toBe(false);
 });
 
 test('point shortcut edit and suppress work and cancel leaves no curve', async ({ page }) => {

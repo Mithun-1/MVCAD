@@ -2284,8 +2284,10 @@ dd {
   white-space: nowrap;
 }
 .curve-point-list button[aria-selected='true'] {
-  background: #eaf2fe;
-  color: #205da8;
+  background: #fff0d9;
+  color: #873600;
+  box-shadow: inset 3px 0 #ba4a00;
+  font-weight: 600;
 }
 .curve-point-list .curve-add-point {
   color: #3977b5;
@@ -2361,8 +2363,9 @@ dd {
   color: var(--dark-muted);
 }
 [data-theme='dark'] .curve-point-list button[aria-selected='true'] {
-  background: #262100;
-  color: #ffe600;
+  background: #302000;
+  color: #ffac36;
+  box-shadow: inset 3px 0 #ffac36;
 }
 [data-theme='dark'] .curve-point-list .curve-add-point {
   color: #ffe600;

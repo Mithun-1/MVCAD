@@ -87,9 +87,21 @@ function curveMarkerTexture(shape: 'dot' | 'diamond' | 'ring') {
     context.lineTo(32, 59);
     context.lineTo(5, 32);
     context.closePath();
-  } else context.arc(32, 32, 26, 0, Math.PI * 2);
-  if (shape === 'ring') context.stroke();
-  else context.fill();
+  } else context.arc(32, 32, shape === 'ring' ? 20 : 26, 0, Math.PI * 2);
+  if (shape === 'ring') {
+    context.stroke();
+    context.beginPath();
+    for (const [x1, y1, x2, y2] of [
+      [32, 2, 32, 10],
+      [32, 54, 32, 62],
+      [2, 32, 10, 32],
+      [54, 32, 62, 32],
+    ]) {
+      context.moveTo(x1, y1);
+      context.lineTo(x2, y2);
+    }
+    context.stroke();
+  } else context.fill();
   return new THREE.CanvasTexture(canvas);
 }
 function disposeObject(group: THREE.Object3D) {
@@ -877,7 +889,9 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
     }
     const resolve = createPointResolver(props.doc);
     const markerPoint = (ref: PointReference | null) =>
-      ref && visibleSetIds.has(ref.setId) && props.pointGeometry.some((set) => set.id === ref.setId)
+      ref &&
+      (props.curveNodes !== undefined || visibleSetIds.has(ref.setId)) &&
+      props.pointGeometry.some((set) => set.id === ref.setId)
         ? resolve(ref)
         : undefined;
     const curvePoints = (props.curveNodes ?? []).map((node) => markerPoint(node.point)).filter((p) => !!p);
@@ -929,7 +943,7 @@ export const Viewport = forwardRef<ViewportApi, Props>(function Viewport(props, 
       addMarkers(
         [activePoint.x, activePoint.y, activePoint.z],
         'ring',
-        30,
+        props.curveNodes ? 42 : 30,
         props.darkMode ? '#ffac36' : '#ba4a00',
         28,
       );
