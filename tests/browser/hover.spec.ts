@@ -119,6 +119,12 @@ for (const theme of ['light', 'dark']) {
       .getByRole('button', { name: 'Curve through points' })
       .click();
     await expect(page.getByRole('option').first()).toContainText('Nearby');
+    // Opening the editor resizes the canvas; wait for layout and its ResizeObserver
+    // before calculating a screen coordinate from the new viewport bounds.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    );
     await moveTo(page, 60, 30);
     await expect(canvas).toHaveAttribute('data-hover-point', 'c');
     await page.mouse.down();
