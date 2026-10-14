@@ -1447,19 +1447,18 @@ export function App() {
                 setSweepError('');
               }}
             >
-              <svg width="30" height="32" viewBox="0 0 32 34" fill="none" aria-hidden="true">
+              <svg width="34" height="32" viewBox="0 0 36 34" fill="none" aria-hidden="true">
                 <path
-                  d="M8 30V19C8 13 11 10 14 8V3M20 30V20C20 17 21 15 27 13"
+                  d="M2 14H8C13 14 16 10 20 5C22 2 24 2 28 2H34V8H28C25 8 24 9 22 12L19 16Q18 17 19 18L22 22C24 25 25 26 28 26H34V32H28C24 32 22 32 20 29C16 24 13 20 8 20H2Z"
+                  fill="currentColor"
+                  fillOpacity="0.14"
                   stroke="currentColor"
-                  strokeWidth="2"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
                 />
-                <path
-                  d="M14 30V20C14 15 17 11 20 10V3M14 19C18 11 21 9 25 7"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <ellipse cx="14" cy="30" rx="6" ry="2" stroke="currentColor" />
-                <path d="M14 3Q17 0 20 3M25 7Q30 8 27 13" stroke="currentColor" />
+                <ellipse cx="2" cy="17" rx="1" ry="3" stroke="currentColor" />
+                <ellipse cx="34" cy="5" rx="1" ry="3" stroke="currentColor" />
+                <ellipse cx="34" cy="29" rx="1" ry="3" stroke="currentColor" />
               </svg>
               <span>Auto Sweep</span>
             </button>
