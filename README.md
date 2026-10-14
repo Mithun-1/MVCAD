@@ -1,10 +1,15 @@
 # Download MVCAD
 
-Get the latest preview installer from [GitHub Releases](https://github.com/Mithun-1/MVCAD/releases). Expand **Assets** under the newest release to find the downloads.
+Click a link below to download MVCAD directly:
+
+- **[Download for Windows (.exe)](https://github.com/Mithun-1/MVCAD/releases/download/v0.1.0-desktop.2/MVCAD-0.1.0-win-x64.exe)**
+- **[Download for Mac — Apple Silicon (.dmg)](https://github.com/Mithun-1/MVCAD/releases/download/v0.1.0-desktop.2/MVCAD-0.1.0-mac-arm64.dmg)**
+
+Current preview: **0.1.0**. [View all releases](https://github.com/Mithun-1/MVCAD/releases).
 
 ## Windows
 
-1. Download `MVCAD-<version>-win-x64.exe`.
+1. Click **Download for Windows** above.
 2. Run the installer and follow the setup instructions.
 3. Open **MVCAD** from the Start menu or desktop shortcut.
 
@@ -12,7 +17,7 @@ Requires 64-bit Windows. The preview installer is unsigned, so Windows may displ
 
 ## macOS — Apple Silicon
 
-1. Download `MVCAD-<version>-mac-arm64.dmg`.
+1. Click **Download for Mac — Apple Silicon** above.
 2. Open the disk image.
 3. Drag **MVCAD** into **Applications**.
 4. Eject the disk image and open **MVCAD** from Applications.
