@@ -73,26 +73,6 @@ export function buildCadBody(
       };
     const tolerance = 1e-4;
     const resolve = createPointResolver(doc);
-    // Grow connected pieces first. Feeding unrelated vessels to a progressively
-    // larger compound makes every subsequent boolean revisit unrelated topology.
-    const keys = paths.map((path) => {
-      const curve = doc.curves.find((c) => c.id === path.curveId)!;
-      return [path.nodeStart, path.nodeEnd].map((i) => JSON.stringify(curve.nodes[i].point));
-    });
-    const remaining = new Set(paths.map((_, i) => i));
-    const ordered: typeof paths = [];
-    const connected = new Set<string>();
-    while (remaining.size) {
-      let chosen = -1;
-      for (const i of remaining)
-        if (keys[i].some((key) => connected.has(key)) &&
-            (chosen < 0 || paths[i].radii[0] > paths[chosen].radii[0])) chosen = i;
-      if (chosen < 0) chosen = remaining.values().next().value!;
-      remaining.delete(chosen);
-      keys[chosen].forEach((key) => connected.add(key));
-      ordered.push(paths[chosen]);
-    }
-    paths.splice(0, paths.length, ...ordered);
     const shapes: cad.Shape3D[] = [];
     let tags: Tag[] = [];
     for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
@@ -213,57 +193,46 @@ export function buildCadBody(
       const shape = own(cad.cast(pipe.Shape()).asShape3D());
       valid(shape, `Sweep of ${curve.name}`);
       shapes.push(shape);
-      const vesselTags = facesOf(shape).map((face) => ({ face, owner: pathIndex, cap: face.geomType === 'PLANE' }));
+      const vesselTags = facesOf(shape).map((face) => ({
+        face,
+        owner: pathIndex,
+        cap: face.geomType === 'PLANE',
+      }));
       tags.push(...vesselTags);
       const retained = new Set<{ delete(): void }>([shape, ...vesselTags.map((tag) => tag.face)]);
       for (const object of garbage)
         if (!previousObjects.has(object) && !retained.has(object)) release(object);
       progress(10 + (35 * (pathIndex + 1)) / paths.length);
     }
-    type UnionGroup = { shape: cad.Shape3D; tags: Tag[]; center: number[] };
-    const groups: UnionGroup[] = shapes.map((shape, index) => {
-      const points = paths[index].positions;
-      const center = [0, 0, 0];
-      for (let i = 0; i < points.length; i++) center[i % 3] += points[i] / (points.length / 3);
-      return { shape, tags: tags.filter((tag) => tag.owner === index), center };
-    });
-    let unions = 0;
-    const combine = (items: UnionGroup[]): UnionGroup => {
-      if (items.length === 1) return items[0];
-      const spans = [0, 1, 2].map((axis) =>
-        Math.max(...items.map((item) => item.center[axis])) -
-        Math.min(...items.map((item) => item.center[axis])),
-      );
-      const axis = spans.indexOf(Math.max(...spans));
-      items.sort((a, b) => a.center[axis] - b.center[axis]);
-      const middle = Math.floor(items.length / 2);
-      const left = combine(items.slice(0, middle));
-      const right = combine(items.slice(middle));
-      const builder = own(new oc.BRepAlgoAPI_Fuse(left.shape.wrapped, right.shape.wrapped));
-      if (!builder.IsDone())
+    // One General Fuse over every vessel intersects each junction once. Pairwise
+    // unions (chained or tree-shaped) re-intersect merged bodies at every level.
+    let fused = shapes[0];
+    if (shapes.length > 1) {
+      const argumentsList = own(new oc.NCollection_List_TopoDS_Shape());
+      const toolsList = own(new oc.NCollection_List_TopoDS_Shape());
+      argumentsList.Append(shapes[0].wrapped);
+      for (let i = 1; i < shapes.length; i++) toolsList.Append(shapes[i].wrapped);
+      const builder = own(new oc.BRepAlgoAPI_Fuse());
+      builder.SetArguments(argumentsList);
+      builder.SetTools(toolsList);
+      builder.Build();
+      release(argumentsList);
+      release(toolsList);
+      if (!builder.IsDone() || builder.HasErrors())
         throw new Error(
           'Could not join the vessel bodies. Check for tangent-only or self-intersecting connections.',
         );
-      const previousTags = [...left.tags, ...right.tags];
-      const nextTags = historyTags(builder, previousTags);
-      const combined = own(cad.cast(builder.Shape()).asShape3D());
-      // Boolean builders retain their complete input and history. Keeping every
-      // stage alive makes vascular unions grow quadratically in WASM memory.
-      // The new shape and retained face wrappers own their topology references.
+      const nextTags = historyTags(builder, tags);
+      fused = own(cad.cast(builder.Shape()).asShape3D());
+      // The builder retains every input and its history; free them before meshing.
       release(builder);
-      release(left.shape);
-      release(right.shape);
+      for (const shape of shapes) release(shape);
       const retainedFaces = new Set(nextTags.map((tag) => tag.face));
-      for (const tag of previousTags) if (!retainedFaces.has(tag.face)) release(tag.face);
-      valid(combined, 'Vessel union');
-      progress(45 + (20 * ++unions) / Math.max(1, shapes.length - 1));
-      return { shape: combined, tags: nextTags, center: left.center.map((v, i) => (v + right.center[i]) / 2) };
-    };
-    // Spatially balanced unions revisit each vessel O(log N) times rather than
-    // repeatedly intersecting one growing compound with every individual tube.
-    const united = combine(groups);
-    let fused = united.shape;
-    tags = united.tags;
+      for (const tag of tags) if (!retainedFaces.has(tag.face)) release(tag.face);
+      tags = nextTags;
+      valid(fused, 'Vessel union');
+    }
+    progress(65);
     // Fillets are explicit, ordered CAD features, never part of Auto Sweep.
     for (const feature of doc.fillets ?? []) {
       if (feature.suppressed) continue;
