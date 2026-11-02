@@ -1,7 +1,7 @@
 import * as cad from 'replicad';
 import type { BRepBuilderAPI_MakeShape, OpenCascadeInstance } from 'replicad-opencascadejs';
 import type { Document } from './model.ts';
-import { resolvePoint, type EvaluatedCurve } from './curves.ts';
+import { createPointResolver, type EvaluatedCurve } from './curves.ts';
 import { sweepPaths, type SweepMesh } from './sweep.ts';
 import { faceMeasurement } from './cadMeasure.ts';
 
@@ -19,16 +19,21 @@ export function buildCadBody(
   progress: (value: number) => void = () => {},
 ): SweepMesh {
   cad.setOC(oc);
-  const garbage: { delete(): void }[] = [];
+  const garbage = new Set<{ delete(): void }>();
   const own = <T extends { delete(): void }>(object: T): T => {
-    garbage.push(object);
+    garbage.add(object);
     return object;
+  };
+  const release = (object: { delete(): void }) => {
+    if (garbage.delete(object)) object.delete();
   };
   const facesOf = (shape: cad.AnyShape) => shape.faces.map(own);
   const edgesOf = (shape: cad.AnyShape) => shape.edges.map(own);
   const valid = (shape: cad.AnyShape, stage: string) => {
     const checker = own(new oc.BRepCheck_Analyzer(shape.wrapped));
-    if (!checker.IsValid())
+    const isValid = checker.IsValid();
+    release(checker);
+    if (!isValid)
       throw new Error(
         `${stage} produced an invalid B-Rep. Check the centerline, diameters, and junction rounding.`,
       );
@@ -42,6 +47,7 @@ export function buildCadBody(
         if (face instanceof cad.Face) result.push({ ...tag, face });
         modifications.RemoveFirst();
       }
+      release(modifications);
       if (!result.length && !builder.IsDeleted(tag.face.wrapped)) result.push(tag);
       return result;
     });
@@ -66,13 +72,35 @@ export function buildCadBody(
         cadBreps: [],
       };
     const tolerance = 1e-4;
+    const resolve = createPointResolver(doc);
+    // Grow connected pieces first. Feeding unrelated vessels to a progressively
+    // larger compound makes every subsequent boolean revisit unrelated topology.
+    const keys = paths.map((path) => {
+      const curve = doc.curves.find((c) => c.id === path.curveId)!;
+      return [path.nodeStart, path.nodeEnd].map((i) => JSON.stringify(curve.nodes[i].point));
+    });
+    const remaining = new Set(paths.map((_, i) => i));
+    const ordered: typeof paths = [];
+    const connected = new Set<string>();
+    while (remaining.size) {
+      let chosen = -1;
+      for (const i of remaining)
+        if (keys[i].some((key) => connected.has(key)) &&
+            (chosen < 0 || paths[i].radii[0] > paths[chosen].radii[0])) chosen = i;
+      if (chosen < 0) chosen = remaining.values().next().value!;
+      remaining.delete(chosen);
+      keys[chosen].forEach((key) => connected.add(key));
+      ordered.push(paths[chosen]);
+    }
+    paths.splice(0, paths.length, ...ordered);
     const shapes: cad.Shape3D[] = [];
     let tags: Tag[] = [];
     for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+      const previousObjects = new Set(garbage);
       const path = paths[pathIndex];
       const curve = doc.curves.find((c) => c.id === path.curveId)!;
       const points = curve.nodes.map((node) => {
-        const p = node.point && resolvePoint(doc, node.point);
+        const p = node.point && resolve(node.point);
         if (!p) throw new Error(`Missing point in ${curve.name}.`);
         return [p.x, p.y, p.z] as Point;
       });
@@ -148,6 +176,9 @@ export function buildCadBody(
       const circle = own(cad.makeCircle(path.radii[0], start, tangent));
       const profile = own(cad.assembleWire([circle]));
       const pipe = own(new oc.BRepOffsetAPI_MakePipeShell(spine.wrapped));
+      // Circular sections do not require a Frenet frame's axial rotation.
+      // Discrete transport avoids excessive surface knots near inflections.
+      pipe.SetDiscreteMode();
       pipe.SetTolerance(tolerance, tolerance, 1e-3);
       pipe.SetTransitionMode(oc.BRepBuilderAPI_TransitionMode.BRepBuilderAPI_RightCorner);
       if (path.radii.every((radius) => Math.abs(radius - path.radii[0]) < 1e-12)) {
@@ -182,23 +213,57 @@ export function buildCadBody(
       const shape = own(cad.cast(pipe.Shape()).asShape3D());
       valid(shape, `Sweep of ${curve.name}`);
       shapes.push(shape);
-      tags.push(
-        ...facesOf(shape).map((face) => ({ face, owner: pathIndex, cap: face.geomType === 'PLANE' })),
-      );
+      const vesselTags = facesOf(shape).map((face) => ({ face, owner: pathIndex, cap: face.geomType === 'PLANE' }));
+      tags.push(...vesselTags);
+      const retained = new Set<{ delete(): void }>([shape, ...vesselTags.map((tag) => tag.face)]);
+      for (const object of garbage)
+        if (!previousObjects.has(object) && !retained.has(object)) release(object);
       progress(10 + (35 * (pathIndex + 1)) / paths.length);
     }
-    let fused = shapes[0];
-    for (let i = 1; i < shapes.length; i++) {
-      const builder = own(new oc.BRepAlgoAPI_Fuse(fused.wrapped, shapes[i].wrapped));
+    type UnionGroup = { shape: cad.Shape3D; tags: Tag[]; center: number[] };
+    const groups: UnionGroup[] = shapes.map((shape, index) => {
+      const points = paths[index].positions;
+      const center = [0, 0, 0];
+      for (let i = 0; i < points.length; i++) center[i % 3] += points[i] / (points.length / 3);
+      return { shape, tags: tags.filter((tag) => tag.owner === index), center };
+    });
+    let unions = 0;
+    const combine = (items: UnionGroup[]): UnionGroup => {
+      if (items.length === 1) return items[0];
+      const spans = [0, 1, 2].map((axis) =>
+        Math.max(...items.map((item) => item.center[axis])) -
+        Math.min(...items.map((item) => item.center[axis])),
+      );
+      const axis = spans.indexOf(Math.max(...spans));
+      items.sort((a, b) => a.center[axis] - b.center[axis]);
+      const middle = Math.floor(items.length / 2);
+      const left = combine(items.slice(0, middle));
+      const right = combine(items.slice(middle));
+      const builder = own(new oc.BRepAlgoAPI_Fuse(left.shape.wrapped, right.shape.wrapped));
       if (!builder.IsDone())
         throw new Error(
           'Could not join the vessel bodies. Check for tangent-only or self-intersecting connections.',
         );
-      tags = historyTags(builder, tags);
-      fused = own(cad.cast(builder.Shape()).asShape3D());
-      valid(fused, 'Vessel union');
-      progress(45 + (20 * i) / shapes.length);
-    }
+      const previousTags = [...left.tags, ...right.tags];
+      const nextTags = historyTags(builder, previousTags);
+      const combined = own(cad.cast(builder.Shape()).asShape3D());
+      // Boolean builders retain their complete input and history. Keeping every
+      // stage alive makes vascular unions grow quadratically in WASM memory.
+      // The new shape and retained face wrappers own their topology references.
+      release(builder);
+      release(left.shape);
+      release(right.shape);
+      const retainedFaces = new Set(nextTags.map((tag) => tag.face));
+      for (const tag of previousTags) if (!retainedFaces.has(tag.face)) release(tag.face);
+      valid(combined, 'Vessel union');
+      progress(45 + (20 * ++unions) / Math.max(1, shapes.length - 1));
+      return { shape: combined, tags: nextTags, center: left.center.map((v, i) => (v + right.center[i]) / 2) };
+    };
+    // Spatially balanced unions revisit each vessel O(log N) times rather than
+    // repeatedly intersecting one growing compound with every individual tube.
+    const united = combine(groups);
+    let fused = united.shape;
+    tags = united.tags;
     // Fillets are explicit, ordered CAD features, never part of Auto Sweep.
     for (const feature of doc.fillets ?? []) {
       if (feature.suppressed) continue;
@@ -269,8 +334,11 @@ export function buildCadBody(
       breps: string[] = [];
     const minRadius = Math.min(...paths.map((p) => Math.min(...p.radii)));
     // Chordal deflection controls only the preview, not the B-Rep or STEP precision.
-    const deflection = Math.max(1e-5, Math.min(0.02, minRadius / 100));
+    const deflection = paths.length > 128 ? 0.05 : Math.max(1e-5, Math.min(0.05, minRadius / 20));
     bodies.forEach((body, index) => {
+      // Keep display triangulations out of the authoritative B-Rep cache. They
+      // can dwarf the CAD data on long spline vessels and are regenerated anyway.
+      breps.push(body.serialize());
       facesOf(body).forEach((face, faceIndex) => {
         const measurement = faceMeasurement(oc, face, index, faceIndex);
         const values = faceDiameters.get(face.hashCode);
@@ -281,7 +349,7 @@ export function buildCadBody(
         }
         cadFaces.push(measurement);
       });
-      const mesh = body.mesh({ tolerance: deflection, angularTolerance: 0.12 });
+      const mesh = body.mesh({ tolerance: deflection, angularTolerance: 0.3 });
       const offset = positions.length / 3,
         start = indices.length;
       // Append in loops: large meshes exceed JS argument limits.
@@ -294,7 +362,6 @@ export function buildCadBody(
           caps.push(capIds.has(group.faceId) ? 1 : 0);
         }
       bodyRanges.push({ start, count: indices.length - start, creaseStart: 0, creaseCount: 0 });
-      breps.push(body.serialize());
       for (const edge of edgesOf(body)) {
         const key = cadEdgeKey(edge),
           samples: number[] = [];
@@ -334,7 +401,7 @@ export function buildCadBody(
       'The B-Rep kernel rejected the vessel geometry. Check tight bends, overlapping paths, or the fillet radius.',
     );
   } finally {
-    for (let i = garbage.length - 1; i >= 0; i--) garbage[i].delete();
+    for (const object of [...garbage].reverse()) object.delete();
   }
 }
 

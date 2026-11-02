@@ -224,3 +224,30 @@ test('Measure retains constant cross-section diameter on curved NURBS vessel wal
     assert.ok(face.area > 0);
   }
 });
+
+test('inflected spatial spline preserves tube volume without an excessive preview mesh', () => {
+  const controls = [
+    [404, 13, 348], [396, 13, 348],
+    [384.9736350267596, 12, 347.39190483459885],
+    [375.1379627234765, 12, 342.71103470169766],
+    [367.3706628145615, 12, 341.59162477698123],
+    [359.58238889465207, 12, 339.70598485963563],
+    [351.35337509505183, 12, 334.8322248586549],
+    [344.61729605941053, 12.38189261694436, 337.5660440579971],
+    [339.36842105263156, 13.342105263157896, 340],
+  ];
+  const text = `ISO-10303-21; HEADER; ENDSEC; DATA;
+    ${controls.map((p, i) => `#${i + 1}=CARTESIAN_POINT('',(${p.join(',')}));`).join('\n')}
+    #10=B_SPLINE_CURVE_WITH_KNOTS('Inflected guide',3,(#1,#2,#3,#4,#5,#6,#7,#8,#9),.UNSPECIFIED.,.F.,.F.,
+      (4,1,1,1,1,1,4),(0.,20.31089204443232,30.466338066648483,38.59069488442141,48.74614090663758,58.90158692885374,77.18138976884283),.UNSPECIFIED.);
+    #11=GEOMETRIC_CURVE_SET('',(#10)); ENDSEC; END-ISO-10303-21;`;
+  const doc = importStepCurves(newDocument(), text, 'inflected.step').doc;
+  doc.curves[0].nodes.forEach((n) => (n.diameter = 5));
+  const mesh = buildCadBody(oc, doc, evaluate(doc), false);
+  assert.equal(mesh.bodies, 1);
+  assert.ok(mesh.indices.length / 3 < 20000, 'a smooth tube should not generate an oversized display mesh');
+  const shape = cad.deserializeShape(mesh.cadBreps[0]);
+  const expectedVolume = Math.PI * 2.5 ** 2 * 67.03;
+  assert.ok(Math.abs(cad.measureVolume(shape) / expectedVolume - 1) < 0.005);
+  shape.delete();
+});

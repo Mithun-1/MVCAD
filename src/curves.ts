@@ -222,7 +222,10 @@ export function curveSections(doc: Pick<Document, 'planes' | 'pointSets' | 'curv
   });
 }
 export const MAX_CURVE_POINTS = 1000;
-export const MAX_CURVES = 128;
+// Curves are evaluated sequentially in the reusable Wasm buffers. The document
+// count does not consume per-curve kernel capacity; vascular imports routinely
+// contain more than 128 branches. Per-curve and point-set limits still apply.
+export const MAX_CURVES = 2048;
 export function resolvePoint(
   doc: Pick<Document, 'pointSets'>,
   ref: PointReference | null,

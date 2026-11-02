@@ -308,8 +308,17 @@ export function importStepCurves(doc: Document, text: string, filename: string) 
   paths.forEach((path, index) => {
     const points = samples[index],
       inserts: Sample[] = [];
+    const margin = STEP_CHORD_TOLERANCE * 2 + STEP_JOIN_TOLERANCE;
+    const lower = [Infinity, Infinity, Infinity];
+    const upper = [-Infinity, -Infinity, -Infinity];
+    for (const sample of points)
+      for (let axis = 0; axis < 3; axis++) {
+        lower[axis] = Math.min(lower[axis], sample.p[axis] - margin);
+        upper[axis] = Math.max(upper[axis], sample.p[axis] + margin);
+      }
     endpoints.forEach((p, junction) => {
       if (points[0].junction === junction || points.at(-1)!.junction === junction) return;
+      if (p.some((value, axis) => value < lower[axis] || value > upper[axis])) return;
       let best = { distance: Infinity, u: 0 };
       for (let i = 1; i < points.length; i++) {
         const a = points[i - 1],
